@@ -1,0 +1,55 @@
+{
+  "name": "HashiCorp Foundational Labs",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/aws-cli:1": {},
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "1.6.0"
+    }
+  },
+
+  "postCreateCommand": ".devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hashicorp.terraform",
+        "hashicorp.hcl",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.associations": {
+          "*.nomad": "hcl",
+          "*.hcl": "hcl"
+        }
+      }
+    }
+  },
+
+  "forwardPorts": [4646, 8200, 8500, 8080],
+  "portsAttributes": {
+    "4646": {
+      "label": "Nomad UI",
+      "onAutoForward": "notify"
+    },
+    "8200": {
+      "label": "Vault UI",
+      "onAutoForward": "notify"
+    },
+    "8500": {
+      "label": "Consul UI",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "Web App",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "remoteUser": "vscode"
+}
