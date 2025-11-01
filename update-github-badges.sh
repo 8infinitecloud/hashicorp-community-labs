@@ -40,9 +40,12 @@ if [ -n "$CODESPACE_NAME" ]; then
     
     echo "✅ Estado de badges actualizado en $BADGE_STATUS_FILE"
     
+    # Actualizar badges en README
+    ./update-readme-badges.sh
+    
     # Commit y push automático si hay cambios
     if [ -n "$GITHUB_TOKEN" ]; then
-        git add $BADGE_STATUS_FILE
+        git add $BADGE_STATUS_FILE README.md
         if git diff --staged --quiet; then
             echo "📝 No hay cambios en badges para commitear"
         else

@@ -11,16 +11,16 @@ Obtener experiencia práctica con las herramientas principales de HashiCorp a tr
 ## 🏆 Sistema de Badges
 
 ### Badges por Tecnología
-- ![Terraform Practitioner](https://img.shields.io/badge/Terraform-Practitioner-7B42BC?style=flat&logo=terraform)
-- ![Vault Practitioner](https://img.shields.io/badge/Vault-Practitioner-FFD814?style=flat&logo=vault)
-- ![Nomad Practitioner](https://img.shields.io/badge/Nomad-Practitioner-00CA8E?style=flat&logo=nomad)
-- ![Consul Practitioner](https://img.shields.io/badge/Consul-Practitioner-F24C53?style=flat&logo=consul)
-- ![Vault Radar Practitioner](https://img.shields.io/badge/Vault%20Radar-Practitioner-FFD814?style=flat&logo=vault)
+Los badges aparecen aquí automáticamente al completar cada laboratorio:
+
+<!-- BADGES_START -->
+*Completa los laboratorios para ver tus badges aquí*
+<!-- BADGES_END -->
 
 ### Badge Fundacional
-![HashiCorp Foundational](https://img.shields.io/badge/HashiCorp-Foundational%20Complete-623CE4?style=for-the-badge&logo=hashicorp)
-
-*Se otorga al completar exitosamente todos los laboratorios*
+<!-- FOUNDATIONAL_BADGE_START -->
+*Completa todos los laboratorios para desbloquear el badge fundacional*
+<!-- FOUNDATIONAL_BADGE_END -->
 
 ## 📚 Laboratorios Disponibles
 
