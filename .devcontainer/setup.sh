@@ -46,11 +46,11 @@ alias n='nomad'
 alias c='consul'
 
 # Navegación rápida a labs
-alias lab-tf='cd /workspaces/hashicorp-foundational-labs/labs/terraform/basic-aws-deploy'
-alias lab-vault='cd /workspaces/hashicorp-foundational-labs/labs/vault/dynamic-secrets'
-alias lab-nomad='cd /workspaces/hashicorp-foundational-labs/labs/nomad/container-deploy'
-alias lab-consul='cd /workspaces/hashicorp-foundational-labs/labs/consul/kv-store'
-alias lab-radar='cd /workspaces/hashicorp-foundational-labs/labs/vault-radar/repo-scanning'
+alias lab-tf='cd "/workspaces/hashicorp-foundational-labs/labs/1. terraform/basic-aws-deploy"'
+alias lab-vault='cd "/workspaces/hashicorp-foundational-labs/labs/2. vault/dynamic-secrets"'
+alias lab-nomad='cd "/workspaces/hashicorp-foundational-labs/labs/4. nomad/container-deploy"'
+alias lab-consul='cd "/workspaces/hashicorp-foundational-labs/labs/5. consul/kv-store"'
+alias lab-radar='cd "/workspaces/hashicorp-foundational-labs/labs/3. vault-radar/repo-scanning"'
 
 # Funciones útiles
 lab-status() {

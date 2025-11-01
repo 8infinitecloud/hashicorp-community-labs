@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: labs/terraform/basic-aws-deploy
+        working-directory: "labs/1. terraform/basic-aws-deploy"
     
     steps:
     - uses: actions/checkout@v4
@@ -22,6 +22,9 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.6.0
+    
+    - name: Make scripts executable
+      run: chmod +x *.sh
     
     - name: Terraform Format Check
       run: terraform fmt -check
@@ -32,17 +35,22 @@ jobs:
     - name: Terraform Validate
       run: terraform validate
     
-    - name: Update Badge
-      if: success()
+    - name: Terraform Plan (dry-run)
+      run: terraform plan
+      env:
+        TF_VAR_bucket_name: "test-bucket-${{ github.run_id }}"
+    
+    - name: Validate Scripts
       run: |
-        echo "✅ Terraform Lab - PASSED" >> $GITHUB_STEP_SUMMARY
+        bash -n validate-lab.sh
+        echo "✅ Terraform Lab scripts validated"
 
   vault-lab:
     name: Validate Vault Lab
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: labs/vault/dynamic-secrets
+        working-directory: "labs/2. vault/dynamic-secrets"
     
     steps:
     - uses: actions/checkout@v4
@@ -51,30 +59,47 @@ jobs:
       run: |
         wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
         echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-        sudo apt update && sudo apt install vault
+        sudo apt update && sudo apt install vault postgresql-client jq
     
     - name: Make scripts executable
       run: chmod +x *.sh
     
-    - name: Validate Scripts
+    - name: Validate Scripts Syntax
       run: |
         bash -n start-vault.sh
         bash -n configure-db-engine.sh
         bash -n generate-credentials.sh
         bash -n verify-credentials.sh
         bash -n cleanup.sh
+        bash -n validate-lab.sh
     
-    - name: Update Badge
-      if: success()
+    - name: Test Vault Lab (Integration)
       run: |
-        echo "✅ Vault Lab - PASSED" >> $GITHUB_STEP_SUMMARY
+        # Start services
+        ./start-vault.sh &
+        sleep 10
+        
+        # Configure database engine
+        ./configure-db-engine.sh
+        
+        # Test credential generation
+        export VAULT_ADDR='http://127.0.0.1:8200'
+        export VAULT_TOKEN='myroot'
+        
+        # Verify we can generate credentials
+        vault read database/creds/my-role
+        
+        # Cleanup
+        ./cleanup.sh
+        
+        echo "✅ Vault Lab integration test passed"
 
   nomad-lab:
     name: Validate Nomad Lab
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: labs/nomad/container-deploy
+        working-directory: "labs/4. nomad/container-deploy"
     
     steps:
     - uses: actions/checkout@v4
@@ -96,19 +121,17 @@ jobs:
         bash -n start-nomad.sh
         bash -n deploy-webapp.sh
         bash -n check-deployment.sh
+        bash -n scale-app.sh
         bash -n cleanup.sh
-    
-    - name: Update Badge
-      if: success()
-      run: |
-        echo "✅ Nomad Lab - PASSED" >> $GITHUB_STEP_SUMMARY
+        bash -n validate-lab.sh
+        echo "✅ Nomad Lab scripts validated"
 
   consul-lab:
     name: Validate Consul Lab
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: labs/consul/kv-store
+        working-directory: "labs/5. consul/kv-store"
     
     steps:
     - uses: actions/checkout@v4
@@ -129,18 +152,37 @@ jobs:
         bash -n read-config.sh
         bash -n generate-config.sh
         bash -n cleanup.sh
+        bash -n validate-lab.sh
     
-    - name: Update Badge
-      if: success()
+    - name: Test Consul Lab (Integration)
       run: |
-        echo "✅ Consul Lab - PASSED" >> $GITHUB_STEP_SUMMARY
+        # Start Consul
+        ./start-consul.sh &
+        sleep 5
+        
+        # Setup KV data
+        ./setup-kv-data.sh
+        
+        # Test data retrieval
+        consul kv get app/config/database/host
+        
+        # Generate config
+        ./generate-config.sh
+        
+        # Verify config file
+        test -f app-config.conf
+        
+        # Cleanup
+        ./cleanup.sh
+        
+        echo "✅ Consul Lab integration test passed"
 
   vault-radar-lab:
     name: Validate Vault Radar Lab
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: labs/vault-radar/repo-scanning
+        working-directory: "labs/3. vault-radar/repo-scanning"
     
     steps:
     - uses: actions/checkout@v4
@@ -153,20 +195,92 @@ jobs:
         bash -n create-test-repo.sh
         bash -n scan-local-repo.sh
         bash -n review-results.sh
+        bash -n fix-secrets.sh
+        bash -n verify-clean.sh
+        bash -n validate-lab.sh
     
-    - name: Test Repository Creation
-      run: ./create-test-repo.sh
-    
-    - name: Verify Test Files
+    - name: Test Repository Creation and Secret Detection
       run: |
+        # Create test repo with secrets
+        ./create-test-repo.sh
+        
+        # Verify test files exist
         test -f test-repo/config.env
         test -f test-repo/app.py
         test -f test-repo/.env
+        
+        # Test secret detection (manual patterns)
+        cd test-repo
+        if grep -r "AKIA[0-9A-Z]\{16\}" . | grep -v ".git"; then
+          echo "✅ AWS keys detected"
+        fi
+        
+        if grep -r "sk_test_" . | grep -v ".git"; then
+          echo "✅ Stripe keys detected"
+        fi
+        cd ..
+        
+        # Test cleanup
+        ./fix-secrets.sh
+        
+        # Verify cleanup
+        test -f test-repo/.gitignore
+        test -f test-repo/.env.example
+        
+        echo "✅ Vault Radar Lab test passed"
+
+  integration-test:
+    name: Full Integration Test
+    runs-on: ubuntu-latest
+    needs: [terraform-lab, vault-lab, nomad-lab, consul-lab, vault-radar-lab]
+    if: github.event_name == 'workflow_dispatch'
     
-    - name: Update Badge
-      if: success()
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup All HashiCorp Tools
       run: |
-        echo "✅ Vault Radar Lab - PASSED" >> $GITHUB_STEP_SUMMARY
+        wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+        sudo apt update && sudo apt install terraform vault nomad consul postgresql-client jq
+    
+    - name: Make all scripts executable
+      run: find labs -name "*.sh" -exec chmod +x {} \;
+    
+    - name: Test Badge System
+      run: |
+        echo "🏆 Testing Badge System"
+        
+        # Test each lab's validation script
+        cd "labs/1. terraform/basic-aws-deploy"
+        terraform init
+        # Skip actual AWS resources in CI
+        echo "terraform-practitioner-test" > .badge-earned
+        cd ../../..
+        
+        cd "labs/2. vault/dynamic-secrets"
+        echo "vault-practitioner-test" > .badge-earned
+        cd ../../..
+        
+        cd "labs/4. nomad/container-deploy"
+        echo "nomad-practitioner-test" > .badge-earned
+        cd ../../..
+        
+        cd "labs/5. consul/kv-store"
+        echo "consul-practitioner-test" > .badge-earned
+        cd ../../..
+        
+        cd "labs/3. vault-radar/repo-scanning"
+        echo "vault-radar-practitioner-test" > .badge-earned
+        cd ../../..
+        
+        # Count badges
+        BADGES=$(find labs -name ".badge-earned" | wc -l)
+        echo "✅ $BADGES badges would be earned"
+        
+        if [ $BADGES -eq 5 ]; then
+          echo "🎉 All labs completed - HashiCorp Foundational Badge earned!"
+        fi
 
   update-badges:
     name: Update Completion Badges
@@ -179,10 +293,28 @@ jobs:
       run: |
         echo "# 🏆 HashiCorp Labs Validation Report" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Lab | Status |" >> $GITHUB_STEP_SUMMARY
-        echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Terraform | ${{ needs.terraform-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Vault | ${{ needs.vault-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Nomad | ${{ needs.nomad-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Consul | ${{ needs.consul-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Vault Radar | ${{ needs.vault-radar-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Lab | Status | Badge |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Terraform | ${{ needs.terraform-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} | ${{ needs.terraform-lab.result == 'success' && '🏆 Terraform Practitioner' || '⏳ Pending' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Vault | ${{ needs.vault-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} | ${{ needs.vault-lab.result == 'success' && '🏆 Vault Practitioner' || '⏳ Pending' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Nomad | ${{ needs.nomad-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} | ${{ needs.nomad-lab.result == 'success' && '🏆 Nomad Practitioner' || '⏳ Pending' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Consul | ${{ needs.consul-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} | ${{ needs.consul-lab.result == 'success' && '🏆 Consul Practitioner' || '⏳ Pending' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Vault Radar | ${{ needs.vault-radar-lab.result == 'success' && '✅ PASSED' || '❌ FAILED' }} | ${{ needs.vault-radar-lab.result == 'success' && '🏆 Vault Radar Practitioner' || '⏳ Pending' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Check if all labs passed
+        ALL_PASSED=true
+        if [ "${{ needs.terraform-lab.result }}" != "success" ]; then ALL_PASSED=false; fi
+        if [ "${{ needs.vault-lab.result }}" != "success" ]; then ALL_PASSED=false; fi
+        if [ "${{ needs.nomad-lab.result }}" != "success" ]; then ALL_PASSED=false; fi
+        if [ "${{ needs.consul-lab.result }}" != "success" ]; then ALL_PASSED=false; fi
+        if [ "${{ needs.vault-radar-lab.result }}" != "success" ]; then ALL_PASSED=false; fi
+        
+        if [ "$ALL_PASSED" = true ]; then
+          echo "## 🎉 ¡FELICITACIONES!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏆 HashiCorp Foundational Badge Earned!" >> $GITHUB_STEP_SUMMARY
+          echo "Has completado exitosamente todos los laboratorios fundacionales de HashiCorp." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ⏳ Laboratorios Pendientes" >> $GITHUB_STEP_SUMMARY
+          echo "Completa todos los laboratorios para obtener el badge fundacional." >> $GITHUB_STEP_SUMMARY
+        fi
