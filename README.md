@@ -1,12 +1,12 @@
-# HashiCorp Foundational Labs
+# HashiCorp Terraform Labs
 
-![HashiCorp Foundational](https://img.shields.io/badge/HashiCorp-Foundational-623CE4?style=for-the-badge&logo=hashicorp)
+![HashiCorp Terraform](https://img.shields.io/badge/HashiCorp-Terraform-7B42BC?style=for-the-badge&logo=terraform)
 
-Laboratorios prácticos de 10-15 minutos para aprender los fundamentos del ecosistema HashiCorp con validación automática y sistema de badges.
+Laboratorios prácticos de 10-15 minutos para aprender Terraform con validación automática y sistema de badges.
 
 ## 🎯 Objetivo
 
-Obtener experiencia práctica con las herramientas principales de HashiCorp a través de laboratorios validados automáticamente que otorgan badges de competencia.
+Obtener experiencia práctica con Terraform a través de laboratorios validados automáticamente que otorgan badges de competencia.
 
 ## 🏆 Sistema de Badges
 
@@ -22,15 +22,51 @@ Los badges aparecen aquí automáticamente al completar cada laboratorio:
 *Completa todos los laboratorios para desbloquear el badge fundacional*
 <!-- FOUNDATIONAL_BADGE_END -->
 
-## 📚 Laboratorios Disponibles
+## 📚 Módulos y Laboratorios
 
-### 1. Terraform - Infraestructura como Código
-- **Lab**: [Deploy básico en AWS](./labs/1.%20terraform/basic-aws-deploy/)
-- **Duración**: 10-15 minutos
-- **Aprenderás**: Crear bucket S3 e instancia EC2, gestionar estado, usar variables y outputs
-- **Validación**: ✅ Script automático incluido
-- **Archivos**: `main.tf`, `variables.tf`, `outputs.tf`, `validate-lab.sh`
+### Módulo 1: IaC Fundamentals
+**Duración:** 1 hora | **Labs:** 3
 
+- **[Lab 1: Instalación de Terraform](./labs/terraform/01-iac-fundamentals/lab1-instalacion/)**
+  - Instalar Terraform y verificar instalación
+  - Duración: 15 minutos
+  
+- **[Lab 2: Tu Primer Archivo Terraform](./labs/terraform/01-iac-fundamentals/lab2-primer-archivo/)**
+  - Crear primera configuración, usar outputs y locals
+  - Duración: 20 minutos
+  
+- **[Lab 3: Infraestructura Local](./labs/terraform/01-iac-fundamentals/lab3-infraestructura-local/)**
+  - Simular infraestructura con archivos locales
+  - Duración: 30 minutos
+
+### Módulo 2: Terraform Fundamentals
+**Duración:** 2 horas | **Labs:** 4
+
+- **[Lab 1: HCL y Tipos de Datos](./labs/terraform/02-terraform-fundamentals/lab1-hcl-tipos-datos/)**
+  - Sintaxis HCL, variables, locals, funciones
+  - Duración: 30 minutos
+  
+- **[Lab 2: Configurar Providers](./labs/terraform/02-terraform-fundamentals/lab2-providers/)**
+  - Versionado de providers, alias, lock file
+  - Duración: 25 minutos
+  
+- **[Lab 3: Terraform State](./labs/terraform/02-terraform-fundamentals/lab3-terraform-state/)**
+  - Gestión de estado, inspección, drift detection
+  - Duración: 30 minutos
+  
+- **[Lab 4: CLI Avanzado](./labs/terraform/02-terraform-fundamentals/lab4-cli-avanzado/)**
+  - Comandos avanzados, workspaces, debugging
+  - Duración: 25 minutos
+
+### Próximos Módulos (En Desarrollo)
+- 🔄 Módulo 3: Core Workflow
+- ⚙️ Módulo 4: Terraform Configuration
+- 📚 Módulo 5: Terraform Modules
+- 💾 Módulo 6: State Management
+- 🔧 Módulo 7: Maintain Infrastructure
+- ☁️ Módulo 8: HCP Terraform
+
+<!-- 
 ### 2. Vault - Manejo de Secretos
 - **Lab**: [Secretos dinámicos](./labs/2.%20vault/dynamic-secrets/)
 - **Duración**: 10-15 minutos
@@ -58,39 +94,51 @@ Los badges aparecen aquí automáticamente al completar cada laboratorio:
 - **Aprenderás**: Almacenar configuración distribuida, usar templates, KV operations
 - **Validación**: ✅ Script automático incluido
 - **Archivos**: `app-config.tpl`, scripts para setup, lectura y generación de config
+-->
 
 ## 📁 Estructura del Repositorio
 
 ```
-hashicorp-foundational-labs/
-├── README.md                    # Este archivo
+hashicorp-terraform-labs/
+├── README.md                    # Documentación principal
+├── .gitignore                   # Archivos ignorados por Git
 ├── LICENSE                      # Licencia MIT
 ├── CONTRIBUTING.md              # Guía de contribución
 ├── playbook.md                  # Playbook del proyecto
-├── validate-all-labs.sh         # Script de validación completa
+├── PROGRESS.md                  # Avances del proyecto
+├── CAMBIOS.md                   # Registro de cambios
+│
 ├── .devcontainer/               # Configuración para GitHub Codespaces
 │   ├── devcontainer.json        # Configuración del contenedor
 │   └── setup.sh                 # Script de configuración automática
+│
 ├── .github/workflows/           # GitHub Actions para CI/CD
 │   └── validate-labs.yml        # Validación automática de labs
-├── .vscode/                     # Configuración de VS Code
-│   └── settings.json            # Configuraciones del editor
-└── labs/                        # Laboratorios organizados por tecnología
-    ├── 1. terraform/
-    │   └── basic-aws-deploy/    # Lab de Terraform
-    ├── 2. vault/
-    │   └── dynamic-secrets/     # Lab de Vault
-    ├── 3. vault-radar/
-    │   └── repo-scanning/       # Lab de Vault Radar
-    ├── 4. nomad/
-    │   └── container-deploy/    # Lab de Nomad
-    └── 5. consul/
-        └── kv-store/            # Lab de Consul
+│
+├── scripts/                     # Scripts de utilidad
+│   ├── validate-all-labs.sh     # Validación completa
+│   ├── show-badges.sh           # Mostrar estado de badges
+│   ├── update-github-badges.sh  # Sincronización con GitHub
+│   └── update-readme-badges.sh  # Actualizar README
+│
+└── labs/terraform/              # Laboratorios organizados por módulo
+    ├── 01-iac-fundamentals/     # Módulo 1: IaC Fundamentals
+    │   ├── README.md
+    │   ├── lab1-instalacion/
+    │   ├── lab2-primer-archivo/
+    │   └── lab3-infraestructura-local/
+    ├── 02-terraform-fundamentals/
+    ├── 03-core-workflow/
+    ├── 04-terraform-configuration/
+    ├── 05-terraform-modules/
+    ├── 06-state-management/
+    ├── 07-maintain-infrastructure/
+    └── 08-hcp-terraform/
 ```
 
 ## 📊 Estado Actual del Repositorio
 
-✅ **Estructura validada**: Todos los laboratorios están organizados correctamente  
+✅ **Estructura validada**: Laboratorios de Terraform organizados correctamente  
 ✅ **Scripts funcionales**: Cada lab incluye scripts de validación automática  
 ✅ **Documentación completa**: READMEs detallados para cada laboratorio  
 ✅ **CI/CD configurado**: GitHub Actions valida automáticamente los labs  
@@ -98,13 +146,15 @@ hashicorp-foundational-labs/
 
 ### Laboratorios Implementados
 - ✅ **Terraform**: Deploy básico en AWS con S3 y EC2
+<!-- 
 - ✅ **Vault**: Secretos dinámicos con PostgreSQL
 - ✅ **Vault Radar**: Escaneo de repositorios para detectar secretos
 - ✅ **Nomad**: Deploy de aplicación web en contenedor
 - ✅ **Consul**: KV Store para configuración distribuida
+-->
 
 ### Próximos Pasos
-- 🔄 Actualización continua de contenido
+- 🔄 Más laboratorios de Terraform (módulos, workspaces, remote state)
 - 📚 Integración con curso de Udemy
 - 🏆 Sistema de badges mejorado
 - 🌐 Soporte para múltiples proveedores cloud
@@ -149,7 +199,7 @@ cat README.md
 ### Método Completo
 ```bash
 # Validar todos los laboratorios de una vez
-./validate-all-labs.sh
+./scripts/validate-all-labs.sh
 ```
 
 ## ✅ Sistema de Validación
@@ -175,24 +225,21 @@ Cada laboratorio incluye:
 
 ### Herramientas Base
 - Git
-- Docker
-- Curl/wget
+- AWS CLI configurado con credenciales válidas
+- Terraform instalado (versión 1.0+)
 
-### Por Laboratorio
-- **Terraform**: AWS CLI configurado, credenciales válidas
-- **Vault**: Docker ejecutándose
-- **Nomad**: Docker ejecutándose
-- **Consul**: Ninguno adicional
-- **Vault Radar**: Git configurado
+### Para GitHub Codespaces
+- Todo preconfigurado automáticamente
+- Solo necesitas una cuenta de AWS con credenciales
 
 ## 📖 Curso Complementario
 
-Curso gratuito de 1 hora en Udemy: [HashiCorp Foundational](link-pendiente)
+Curso gratuito de 1 hora en Udemy: [HashiCorp Terraform Foundational](link-pendiente)
 
 El curso incluye:
-- Introducción al ecosistema HashiCorp
+- Introducción a Terraform
 - Demos de cada laboratorio
-- Explicación de conceptos clave
+- Explicación de conceptos clave de IaC
 - Guía para obtener badges
 
 ## 🏅 Obtener tus Badges
@@ -215,19 +262,21 @@ Cada laboratorio genera automáticamente un badge al completarse exitosamente:
 
 ### Badges Disponibles
 - 🏆 **Terraform Practitioner** - Deploy básico en AWS
+<!-- 
 - 🏆 **Vault Practitioner** - Secretos dinámicos
 - 🏆 **Vault Radar Practitioner** - Escaneo de secretos
 - 🏆 **Nomad Practitioner** - Orquestación de contenedores
 - 🏆 **Consul Practitioner** - Service discovery y KV store
-- 🎖️ **HashiCorp Foundational Complete** - Badge fundacional (todos los labs)
+-->
+- 🎖️ **HashiCorp Foundational Complete** - Badge fundacional (todos los labs de Terraform)
 
 ### Comandos Útiles
 ```bash
 # Ver estado de badges
-./show-badges.sh
+./scripts/show-badges.sh
 
 # Validar todos los labs y generar badges
-./validate-all-labs.sh
+./scripts/validate-all-labs.sh
 
 # Validar lab individual
 cd "labs/1. terraform/basic-aws-deploy" && ./validate-lab.sh
@@ -259,10 +308,10 @@ cd "labs/1. terraform/basic-aws-deploy" && ./validate-lab.sh
 
 ```bash
 # Ver tu progreso actual
-./show-badges.sh
+./scripts/show-badges.sh
 
 # Validar todos los labs y generar badges
-./validate-all-labs.sh
+./scripts/validate-all-labs.sh
 
 # Ver badges obtenidos
 find . -name ".badge-*-earned" -exec basename {} \; | sort
@@ -277,10 +326,10 @@ MIT License - ver [LICENSE](LICENSE) para detalles.
 
 ---
 
-**¡Comienza tu journey HashiCorp hoy mismo!** 🚀
+**¡Comienza tu journey con Terraform hoy mismo!** 🚀
 
-Cada laboratorio te llevará solo 10-15 minutos y al final tendrás competencias validadas en las herramientas más importantes de la infraestructura moderna.
+Cada laboratorio te llevará solo 10-15 minutos y al final tendrás competencias validadas en Terraform, la herramienta líder de Infrastructure as Code.
 
 ---
 
-*Última actualización: Noviembre 2024*
+*Última actualización: Abril 2026*

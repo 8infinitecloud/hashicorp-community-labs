@@ -1,0 +1,80 @@
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/tfplan
+**/.terraform.tfstate.lock.info
+**/*.tfvars
+**/*.auto.tfvars
+
+# Vault
+**/vault-data/
+**/vault.log
+**/vault-token
+
+# Nomad
+**/nomad-data/
+**/nomad.log
+
+# Consul
+**/consul-data/
+**/consul.log
+
+# Logs y temporales
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+*.cache
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Badges y estado (generados automáticamente)
+.badge-*-earned
+.foundational-badge-earned
+badge-status.json
+
+# Credenciales y secretos
+*.pem
+*.key
+*.crt
+*.p12
+**/credentials
+**/.aws/credentials
+**/.vault-token
+
+# Node modules (si se agregan labs con Node.js)
+**/node_modules/
+**/package-lock.json
+
+# Python (si se agregan labs con Python)
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/venv/
+**/.venv/
+
+# Docker
+**/docker-compose.override.yml
+
+# Archivos de prueba generados
+**/test-repo/
+**/test-data/
+
+# Labs comentados (no activos)
+labs/2. vault/
+labs/3. vault-radar/
+labs/4. nomad/
+labs/5. consul/
+
+# Documentación interna (no para repositorio)
+docs/
