@@ -15,83 +15,61 @@ Instalar Terraform en tu sistema operativo y verificar que la instalación sea c
 
 ## 🚀 Instrucciones Paso a Paso
 
-### Opción 1: Instalación con Homebrew (macOS - Recomendado)
+### Paso 1: Instalar Terraform
+
+Elige el método según tu sistema operativo:
+
+**macOS — Homebrew (recomendado):**
 
 ```bash
-# Instalar Terraform con Homebrew
 brew tap hashicorp/tap
 brew install hashicorp/tap/terraform
-
-# Verificar instalación
-terraform version
 ```
 
-### Opción 2: Instalación Manual (macOS/Linux/Windows)
-
-#### macOS
+**macOS — Manual (Intel o Apple Silicon):**
 
 ```bash
-# Descargar Terraform
 cd ~/Downloads
+
+# Intel (x86_64)
 wget https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_darwin_amd64.zip
 
-# Para Mac con chip M1/M2/M3 (ARM)
+# Apple Silicon (M1/M2/M3)
 wget https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_darwin_arm64.zip
 
-# Descomprimir
 unzip terraform_1.7.0_darwin_*.zip
-
-# Mover a PATH
 sudo mv terraform /usr/local/bin/
-
-# Verificar permisos
 sudo chmod +x /usr/local/bin/terraform
-
-# Verificar instalación
-terraform version
 ```
 
-#### Linux (Ubuntu/Debian)
+**Linux (Ubuntu/Debian):**
 
 ```bash
-# Agregar repositorio de HashiCorp
 wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-
 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-
-# Actualizar e instalar
 sudo apt update
 sudo apt install terraform
-
-# Verificar instalación
-terraform version
 ```
 
-#### Windows
+**Windows — Chocolatey:**
 
 ```powershell
-# Opción 1: Con Chocolatey
 choco install terraform
-
-# Opción 2: Manual
-# 1. Descargar desde https://www.terraform.io/downloads
-# 2. Descomprimir el archivo ZIP
-# 3. Mover terraform.exe a C:\Windows\System32\
-# 4. O agregar la carpeta al PATH en Variables de Entorno
-
-# Verificar instalación
-terraform version
 ```
+
+**Windows — Manual:**
+1. Descargar desde https://www.terraform.io/downloads
+2. Descomprimir el archivo ZIP
+3. Mover `terraform.exe` a `C:\Windows\System32\`
+4. O agregar la carpeta al PATH en Variables de Entorno
 
 ### Paso 2: Verificar la Instalación
 
 ```bash
-# Ver versión instalada
 terraform version
-
 # Salida esperada:
 # Terraform v1.7.0
-# on darwin_arm64 (o tu plataforma)
+# on darwin_arm64  (o tu plataforma)
 ```
 
 ### Paso 3: Ver Comandos Disponibles
@@ -109,23 +87,16 @@ terraform apply -help
 ### Paso 4: Habilitar Autocompletado (Opcional)
 
 ```bash
-# Bash
 terraform -install-autocomplete
-source ~/.bashrc
 
-# Zsh
-terraform -install-autocomplete
-source ~/.zshrc
-
-# Fish
-terraform -install-autocomplete
-source ~/.config/fish/config.fish
+# Recargar shell según el que uses
+source ~/.bashrc   # Bash
+source ~/.zshrc    # Zsh
 ```
 
 ### Paso 5: Ejecutar el Script de Validación
 
 ```bash
-# Ejecutar script de validación
 ./validate-lab.sh
 ```
 
@@ -146,14 +117,8 @@ Para completar exitosamente este laboratorio:
 
 **Solución:**
 ```bash
-# Verificar ubicación de terraform
 which terraform
-
-# Si no está en PATH, agregarlo
-# macOS/Linux
 export PATH=$PATH:/usr/local/bin
-
-# Agregar permanentemente a ~/.bashrc o ~/.zshrc
 echo 'export PATH=$PATH:/usr/local/bin' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -164,11 +129,7 @@ source ~/.bashrc
 
 **Solución:**
 ```bash
-# Dar permisos de ejecución
 sudo chmod +x /usr/local/bin/terraform
-
-# O si está en otra ubicación
-chmod +x /ruta/a/terraform
 ```
 
 ### Error: "terraform: cannot execute binary file"
@@ -177,14 +138,9 @@ chmod +x /ruta/a/terraform
 
 **Solución:**
 ```bash
-# Verificar tu arquitectura
 uname -m
-# x86_64 = AMD64
-# arm64 = ARM64 (M1/M2/M3)
-
-# Descargar la versión correcta
-# Para Intel: terraform_*_darwin_amd64.zip
-# Para M1/M2/M3: terraform_*_darwin_arm64.zip
+# x86_64 → descargar darwin_amd64.zip  (Intel)
+# arm64  → descargar darwin_arm64.zip  (Apple Silicon)
 ```
 
 ### Windows: "terraform no se reconoce como comando"
@@ -194,7 +150,7 @@ uname -m
 **Solución:**
 1. Buscar "Variables de entorno" en el menú inicio
 2. Editar "Path" en Variables del sistema
-3. Agregar la ruta donde está terraform.exe
+3. Agregar la ruta donde está `terraform.exe`
 4. Reiniciar la terminal
 
 ## 📚 Recursos Adicionales
@@ -216,4 +172,4 @@ Al completar este laboratorio obtienes: **Terraform Installation Badge**
 
 ---
 
-**Siguiente:** [Lab 2 - Tu Primer Archivo Terraform](../02-primer-archivo/)
+**Siguiente:** [Lab 2 - Tu Primer Archivo Terraform](../lab2-primer-archivo/)
