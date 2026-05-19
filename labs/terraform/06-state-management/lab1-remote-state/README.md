@@ -4,7 +4,7 @@
 
 ## Objetivo
 
-Entender la diferencia entre state local y remoto, inspeccionar la estructura de `terraform.tfstate`, y documentar la configuración de un backend remoto para trabajo colaborativo.
+Configurar un backend S3 remoto usando LocalStack, almacenar el state en S3, e inspeccionar los recursos gestionados con `terraform state list` y `awslocal s3 ls`.
 
 ## Duracion
 
@@ -14,19 +14,75 @@ Entender la diferencia entre state local y remoto, inspeccionar la estructura de
 
 - Modulo 05 completado
 - Terraform instalado (`terraform version` >= 1.0)
-- Conocimiento basico del archivo `terraform.tfstate`
+- LocalStack corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Preparar el directorio de trabajo
+### Paso 1: Verificar que LocalStack esta listo
 
 ```bash
-cd /root/lab
+curl -s http://localhost:4566/_localstack/health | jq .services.s3
 ```
 
-El lab ya tiene su directorio pre-creado en el contenedor. Siempre trabajaras desde `/root/lab`.
+Debe retornar `"running"` o `"available"`. LocalStack simula los servicios AWS en `http://localhost:4566`. Si el valor no es `"running"`, espera 10 segundos y vuelve a ejecutar el comando.
 
-### Paso 2: Crear main.tf con state local
+### Paso 2: Crear el bucket S3 para el remote state
+
+```bash
+awslocal s3 mb s3://tf-state-lab1
+```
+
+`awslocal` es un wrapper preconfigurado de la AWS CLI que apunta a LocalStack en `localhost:4566`. El bucket `tf-state-lab1` almacenara el archivo `terraform.tfstate` en lugar de guardarlo localmente en disco.
+
+### Paso 3: Crear providers.tf con el backend S3
+
+```bash
+touch providers.tf
+```
+
+```bash
+cat > providers.tf <<'EOF'
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  backend "s3" {
+    bucket                      = "tf-state-lab1"
+    key                         = "lab1/terraform.tfstate"
+    region                      = "us-east-1"
+    endpoint                    = "http://localhost:4566"
+    access_key                  = "test"
+    secret_key                  = "test"
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    force_path_style            = true
+  }
+}
+
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+
+  endpoints {
+    s3 = "http://localhost:4566"
+  }
+}
+EOF
+```
+
+El bloque `backend "s3"` indica a Terraform que guarde el state en S3 en lugar del disco local. `force_path_style = true` es necesario para que la URL funcione con LocalStack. `skip_credentials_validation` evita llamadas reales a AWS IAM ya que usamos credenciales de prueba.
+
+### Paso 4: Crear main.tf con un recurso AWS S3
 
 ```bash
 touch main.tf
@@ -34,170 +90,92 @@ touch main.tf
 
 ```bash
 cat > main.tf <<'EOF'
-terraform {
-  required_version = ">= 1.0"
+resource "aws_s3_bucket" "app" {
+  bucket = "mi-app-bucket-lab1"
 
-  required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
-    }
+  tags = {
+    Entorno = "dev"
+    Lab     = "remote-state"
   }
 }
 
-resource "local_file" "config" {
-  filename = "${path.module}/app.conf"
-  content  = "entorno=dev\nversion=1.0\n"
+output "bucket_name" {
+  value = aws_s3_bucket.app.bucket
 }
 
-resource "local_file" "readme" {
-  filename = "${path.module}/DEPLOYED.md"
-  content  = "# Desplegado\nFecha: generado por Terraform\n"
-}
-
-output "archivos" {
-  value = [local_file.config.filename, local_file.readme.filename]
+output "bucket_arn" {
+  value = aws_s3_bucket.app.arn
 }
 EOF
 ```
 
-`main.tf` define dos recursos `local_file` que generan archivos en disco. El bloque `required_providers` fija el proveedor `hashicorp/local` version 2.x para que Terraform sepa donde descargarlo.
+Este recurso crea un bucket S3 gestionado por Terraform en LocalStack. El state de este recurso — su ARN, ID, region, etc. — se almacenara en el backend S3 configurado en `providers.tf`, no en un archivo local.
 
-### Paso 3: Inicializar y aplicar
+### Paso 5: Inicializar Terraform con el backend remoto
 
 ```bash
 terraform init
 ```
 
+`terraform init` descarga el provider AWS, detecta el bloque `backend "s3"`, y crea el archivo de state remoto en `s3://tf-state-lab1/lab1/terraform.tfstate`. Si ves el mensaje "Successfully configured the backend", el backend remoto esta activo.
+
+### Paso 6: Aplicar la configuracion
+
 ```bash
 terraform apply -auto-approve
 ```
 
-`terraform init` descarga el provider y crea el directorio `.terraform/`. `terraform apply` ejecuta la configuracion y escribe el resultado en `terraform.tfstate`.
+Terraform aplica el plan y crea el bucket `mi-app-bucket-lab1` en LocalStack. Al terminar, el state ya no existe en disco: fue escrito directamente en S3. El output muestra el nombre y ARN del bucket creado.
 
-### Paso 4: Inspeccionar el state local
+### Paso 7: Inspeccionar el state remoto en S3
 
 ```bash
-ls -la
+awslocal s3 ls s3://tf-state-lab1/lab1/
 ```
 
 ```bash
 terraform state list
 ```
 
+`awslocal s3 ls` confirma que el archivo `terraform.tfstate` existe en el bucket S3. `terraform state list` lo recupera remotamente y lista los recursos gestionados, demostrando que Terraform puede trabajar con el state remoto de forma transparente.
+
+### Paso 8: Ver los detalles del recurso en el state remoto
+
 ```bash
-terraform state show local_file.config
+terraform state show aws_s3_bucket.app
 ```
 
-`terraform state list` muestra los recursos gestionados por este state. `terraform state show` muestra los atributos completos de un recurso especifico, util para verificar que los valores son correctos.
+`terraform state show` descarga el state desde S3 y muestra todos los atributos del recurso. Esto funciona igual que con el state local, pero el origen es el bucket S3 en LocalStack.
 
-### Paso 5: Leer la estructura del tfstate
-
-```bash
-python3 -m json.tool terraform.tfstate | head -40
-```
-
-El tfstate es un JSON con campos clave: `serial` (incrementa en cada apply), `terraform_version`, y `resources` (lista de recursos con sus atributos actuales). Nunca edites este archivo manualmente.
-
-### Paso 6: Crear el archivo de notas sobre el problema del state local
+### Paso 9: Ejecutar validacion
 
 ```bash
-touch notas-problema.txt
+cd /root/lab
 ```
 
 ```bash
-cat > notas-problema.txt <<'EOF'
-PROBLEMA DEL STATE LOCAL:
-- Solo existe en tu maquina local
-- Dos personas aplicando al mismo tiempo generan conflicto
-- Sin locking: posible corrupcion del state
-- Sin historial de versiones
-
-SOLUCION: Remote State
-- Almacenado en S3, GCS, Azure Blob, Terraform Cloud, etc.
-- Locking automatico (DynamoDB en AWS)
-- State versionado y recuperable
-- Compartido por todo el equipo de forma segura
-EOF
-```
-
-Este archivo documenta el razonamiento detras del remote state. El state local es suficiente para proyectos personales, pero inviable en equipos porque no hay mecanismo de sincronizacion ni locking.
-
-### Paso 7: Crear la referencia de configuracion de backend S3
-
-```bash
-touch backend-referencia.tf
-```
-
-```bash
-cat > backend-referencia.tf <<'EOF'
-# REFERENCIA: backend S3 real con locking via DynamoDB
-# No ejecutar en este lab — requiere credenciales AWS reales
-
-terraform {
-  backend "s3" {
-    bucket         = "mi-empresa-terraform-state"
-    key            = "proyectos/app-web/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "terraform-state-lock"
-  }
-}
-EOF
-```
-
-Esta es la configuracion tipica de backend S3 en produccion. `bucket` y `key` identifican donde se almacena el state. `dynamodb_table` habilita el locking automatico: cuando alguien ejecuta `apply`, Terraform escribe un registro en DynamoDB que bloquea a otros usuarios hasta que el apply termine.
-
-### Paso 8: Respaldar el state antes de cualquier migracion
-
-```bash
-cp terraform.tfstate terraform.tfstate.backup
-```
-
-```bash
-echo "State respaldado en terraform.tfstate.backup"
-```
-
-Siempre respalda el tfstate antes de operaciones de migracion. Si algo falla durante `terraform init -migrate-state`, puedes restaurar el state manualmente copiando el backup.
-
-### Paso 9: Ver comandos clave de state
-
-```bash
-terraform state list
-```
-
-```bash
-terraform state show local_file.config
-```
-
-```bash
-terraform show
-```
-
-`terraform state list` lista todos los recursos gestionados. `terraform state show <recurso>` muestra sus atributos. `terraform show` muestra el estado completo en formato legible, equivalente a leer el tfstate pero sin JSON.
-
-### Paso 10: Ejecutar validacion
-
-```bash
-cd /root/lab && bash validate-lab.sh
+bash validate-lab.sh
 ```
 
 ## Criterios de Validacion
 
-1. Terraform inicializado (`.terraform/` presente)
-2. `terraform.tfstate` existe y tiene `serial > 0`
-3. El state contiene al menos 2 recursos
-4. `notas-problema.txt` creado
-5. `backend-referencia.tf` creado con bloque `backend`
-6. `main.tf` usa el provider `local`
+1. LocalStack responde en `http://localhost:4566` con S3 en estado `running`
+2. Bucket `tf-state-lab1` existe en LocalStack
+3. `terraform.tfstate` en S3 en `lab1/terraform.tfstate`
+4. `terraform state list` muestra `aws_s3_bucket.app`
+5. `providers.tf` contiene bloque `backend "s3"`
+6. No existe `terraform.tfstate` local (el state esta en S3)
 
 ## Conceptos Aprendidos
 
-- Estructura del archivo `terraform.tfstate`
-- Diferencia entre state local y remoto
-- Configuracion del backend S3 con locking DynamoDB
-- Comandos `state list`, `state show`, `show`
-- Por que el state remoto es necesario en equipos
+| Concepto | Descripcion |
+|----------|-------------|
+| Remote State | State almacenado en S3 en lugar del disco local |
+| `backend "s3"` | Bloque de configuracion del backend en Terraform |
+| `force_path_style` | Necesario para URLs de S3 compatibles con LocalStack |
+| `awslocal` | Wrapper de AWS CLI preconfigurado para LocalStack |
+| `terraform state list` | Lista recursos del state (local o remoto) |
+| `terraform state show` | Muestra atributos completos de un recurso en el state |
 
 ---
 

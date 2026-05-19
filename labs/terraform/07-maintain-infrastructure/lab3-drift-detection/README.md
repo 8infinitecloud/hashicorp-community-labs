@@ -1,33 +1,43 @@
 # Lab 3: Drift Detection
 
 ![Terraform](https://img.shields.io/badge/Terraform-Drift_Detection-7B42BC?style=flat&logo=terraform)
+![LocalStack](https://img.shields.io/badge/LocalStack-AWS_Local-FF9900?style=flat)
 
 ## Objetivo
-Detectar y reconciliar *configuration drift*: cuando la infraestructura real diverge del codigo Terraform por cambios manuales.
+
+Detectar y reconciliar *configuration drift* real usando buckets S3 en LocalStack. El drift ocurre cuando alguien modifica infraestructura directamente en AWS (o en este caso, via `awslocal`) sin pasar por Terraform.
 
 ## Duracion
+
 25 minutos
 
 ## Prerrequisitos
+
 - Labs 1 y 2 del modulo 07 completados
 - Terraform instalado
+- LocalStack corriendo (`docker ps` debe mostrar el contenedor)
+- `awslocal` disponible en el PATH
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Preparar el directorio de trabajo
+### Paso 1: Verificar que LocalStack esta listo
+
+```bash
+curl -s http://localhost:4566/_localstack/health | jq .services.s3
+```
+
+El valor debe ser `"running"` o `"available"`. Si el comando falla, LocalStack aun no termino de iniciar — espera unos segundos y vuelve a intentarlo.
+
+### Paso 2: Preparar el directorio de trabajo
 
 ```bash
 mkdir -p /root/lab
 cd /root/lab
 ```
 
-```bash
-mkdir -p config scripts
-```
+Todos los archivos del lab viviran en `/root/lab`. El validate al final esperara encontrarlos en este directorio.
 
-Separar archivos de configuracion y scripts en subdirectorios facilita la organizacion y refleja una estructura realista de un proyecto.
-
-### Paso 2: Crear la infraestructura base
+### Paso 3: Crear la configuracion Terraform
 
 ```bash
 touch main.tf
@@ -37,160 +47,167 @@ touch main.tf
 cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
-
   required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = ">= 2.0"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
 
-resource "local_file" "app_config" {
-  filename = "${path.module}/config/app.conf"
-  content  = <<-EOT
-    # Configuracion de la aplicacion
-    entorno=produccion
-    version=2.0
-    max_conexiones=100
-    timeout=30
-  EOT
-}
-
-resource "local_file" "deploy_script" {
-  filename        = "${path.module}/scripts/deploy.sh"
-  content         = "#!/bin/bash\necho 'Desplegando version 2.0'\n"
-  file_permission = "0755"
-}
-
-resource "local_file" "hosts" {
-  filename = "${path.module}/config/hosts.txt"
-  content  = "web-01 10.0.1.10\nweb-02 10.0.1.11\n"
-
-  lifecycle {
-    ignore_changes = [content]
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  endpoints {
+    s3 = "http://localhost:4566"
   }
 }
 
-output "archivos" {
-  value = [
-    local_file.app_config.filename,
-    local_file.deploy_script.filename,
-    local_file.hosts.filename,
-  ]
+resource "aws_s3_bucket" "app" {
+  bucket        = "app-bucket-drift-lab"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_tagging" "app" {
+  bucket = aws_s3_bucket.app.id
+  tagging {
+    tag_set {
+      key   = "Environment"
+      value = "dev"
+    }
+    tag_set {
+      key   = "ManagedBy"
+      value = "terraform"
+    }
+  }
 }
 EOF
 ```
 
-`app_config` y `deploy_script` son gestionados completamente por Terraform. `hosts` usa `lifecycle { ignore_changes = [content] }` para representar un archivo que otra herramienta (como Ansible) puede modificar sin que Terraform lo revierta.
+El provider apunta a LocalStack usando credenciales ficticias y desactivando las validaciones de AWS. El bucket `app-bucket-drift-lab` tiene dos tags que Terraform gestionara: `Environment=dev` y `ManagedBy=terraform`.
+
+### Paso 4: Inicializar Terraform
 
 ```bash
 terraform init
 ```
 
+Terraform descarga el provider `hashicorp/aws` y configura el directorio `.terraform`. Esto es necesario antes de cualquier operacion.
+
+### Paso 5: Aplicar la configuracion inicial
+
 ```bash
 terraform apply -auto-approve
 ```
 
+Terraform crea el bucket y aplica los tags. El state local (`terraform.tfstate`) queda sincronizado con lo que existe en LocalStack.
+
+### Paso 6: Verificar el estado inicial de los tags
+
 ```bash
-cat config/app.conf
+awslocal s3api get-bucket-tagging --bucket app-bucket-drift-lab
 ```
+
+Debes ver `Environment=dev` y `ManagedBy=terraform`. Este es el estado "correcto" definido por el codigo Terraform.
+
+### Paso 7: Simular drift — cambio manual fuera de Terraform
+
+```bash
+awslocal s3api put-bucket-tagging --bucket app-bucket-drift-lab --tagging 'TagSet=[{Key=Environment,Value=produccion},{Key=ManagedBy,Value=manual}]'
+```
+
+Esto simula lo que ocurre cuando alguien entra directamente a la consola de AWS y cambia los tags de emergencia, o cuando un script externo sobreescribe la configuracion. El state de Terraform todavia dice `Environment=dev`, pero la realidad en AWS ahora dice `Environment=produccion`.
+
+### Paso 8: Verificar el drift introducido
+
+```bash
+awslocal s3api get-bucket-tagging --bucket app-bucket-drift-lab
+```
+
+Confirmas que los tags en el recurso real son diferentes a los que Terraform espera. Esto es el drift: brecha entre el estado deseado (codigo) y el estado real (infraestructura).
+
+### Paso 9: Detectar el drift con terraform plan
 
 ```bash
 terraform plan
 ```
 
-El primer `terraform plan` debe mostrar `No changes` — el state coincide exactamente con los archivos en disco.
+Terraform compara su state contra la realidad actual en LocalStack. El plan muestra que quiere revertir los tags a `Environment=dev` y `ManagedBy=terraform`. En un pipeline de CI, un exit code 2 aqui dispara una alerta de drift.
 
-### Paso 3: Introducir drift manual
+### Paso 10: Reconciliar — aplicar el estado deseado
 
 ```bash
-printf '\n# MODIFICADO MANUALMENTE\ndebug=true\n' >> config/app.conf
+terraform apply -auto-approve
 ```
 
-```bash
-printf "echo 'Paso adicional aniadido manualmente'\n" >> scripts/deploy.sh
-```
+Terraform sobreescribe los cambios manuales con los valores del codigo. La fuente de verdad es siempre el codigo HCL, no la consola de AWS.
+
+### Paso 11: Agregar ignore_changes para campos gestionados externamente
 
 ```bash
-printf 'db-01 10.0.2.10\n' >> config/hosts.txt
-```
+cat > main.tf <<'EOF'
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
 
-Estos comandos simulan cambios manuales hechos directamente en el sistema de archivos, sin pasar por Terraform. En entornos reales esto ocurre cuando alguien edita configuraciones de emergencia directamente en el servidor.
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  endpoints {
+    s3 = "http://localhost:4566"
+  }
+}
 
-### Paso 4: Detectar el drift con terraform plan
+resource "aws_s3_bucket" "app" {
+  bucket        = "app-bucket-drift-lab"
+  force_destroy = true
 
-```bash
-terraform plan
-```
+  lifecycle {
+    ignore_changes = [tags]
+  }
+}
 
-Terraform compara el state almacenado con la realidad actual en disco. Los recursos `app_config` y `deploy_script` apareceran como `~ update in-place` porque su contenido cambio. `hosts` no aparecera gracias a `ignore_changes = [content]`.
-
-### Paso 5: Documentar las opciones de reconciliacion
-
-```bash
-touch opciones-reconciliacion.md
-```
-
-```bash
-cat > opciones-reconciliacion.md <<'EOF'
-# Opciones para reconciliar el drift
-
-## Opcion 1: Revertir el drift — el codigo es la fuente de verdad
-Ejecutar terraform apply para sobreescribir los cambios manuales con el codigo.
-Usar cuando: los cambios manuales fueron un error o son temporales.
-
-## Opcion 2: Adoptar el drift — actualizar el codigo para reflejar la realidad
-Editar main.tf para incluir los cambios deseados, luego ejecutar terraform apply.
-Usar cuando: los cambios manuales son validos y deben mantenerse.
-
-## Opcion 3: Ignorar campos especificos — ignore_changes
-Agregar lifecycle { ignore_changes = [campo] } para que Terraform no revierta
-ese campo especifico.
-Usar cuando: otro sistema (Ansible, scripts de init) gestiona ese campo.
-
-## Comandos utiles para diagnostico
-terraform plan               # detecta drift comparando state vs realidad
-terraform plan -refresh-only # solo actualiza el state, no modifica recursos
-terraform state show <recurso>   # inspecciona un recurso del state
+resource "aws_s3_bucket_tagging" "app" {
+  bucket = aws_s3_bucket.app.id
+  tagging {
+    tag_set {
+      key   = "Environment"
+      value = "dev"
+    }
+    tag_set {
+      key   = "ManagedBy"
+      value = "terraform"
+    }
+  }
+}
 EOF
 ```
 
-Documentar las opciones de reconciliacion ayuda al equipo a elegir la estrategia correcta segun el contexto. La eleccion incorrecta puede resultar en perdida de datos o configuracion invalida.
+`lifecycle { ignore_changes = [tags] }` le dice a Terraform que ignore diferencias en el campo `tags` del bucket. Usar esto cuando otra herramienta (por ejemplo, un sistema de CMDB o AWS Config) necesita agregar sus propios tags sin que Terraform los revierta.
 
-### Paso 6: Revertir el drift con terraform apply
-
-```bash
-terraform apply -auto-approve
-```
-
-```bash
-cat config/app.conf
-```
+### Paso 12: Verificar que el plan no muestra cambios
 
 ```bash
 terraform plan
 ```
 
-`terraform apply` sobreescribe los cambios manuales con el contenido definido en el codigo. `app.conf` vuelve a su estado original. El segundo `terraform plan` debe mostrar `No changes`.
+Despues de reconciliar, el plan debe mostrar `No changes. Your infrastructure matches the configuration.` Con `ignore_changes` activo, futuras modificaciones manuales a los tags del bucket no apareceran en el plan.
 
-### Paso 7: Verificar que ignore_changes protege el archivo hosts
-
-```bash
-printf 'db-01 10.0.2.10\n' >> config/hosts.txt
-```
-
-```bash
-terraform plan
-```
-
-```bash
-terraform plan -refresh-only
-```
-
-El archivo `hosts.txt` tiene contenido diferente al registrado en el state, pero `ignore_changes = [content]` le dice a Terraform que ignore esa diferencia. El plan no muestra cambios para `local_file.hosts`. `terraform plan -refresh-only` actualiza el state para reflejar la realidad sin ejecutar cambios.
-
-### Paso 8: Ejecutar validacion
+### Paso 13: Ejecutar validacion
 
 ```bash
 cd /root/lab
@@ -200,33 +217,15 @@ cd /root/lab
 bash validate-lab.sh
 ```
 
-## Criterios de Validacion
-
-1. Infraestructura creada con estado limpio
-2. Drift introducido manualmente en al menos un recurso
-3. `terraform plan` detecto el drift
-4. Drift revertido con `terraform apply`
-5. `ignore_changes` aplicado en al menos un recurso
-6. `opciones-reconciliacion.md` creado
-
-## Prevenir el drift en CI/CD
-
-```bash
-# En un pipeline de CI, ejecutar plan periodicamente.
-# El exit code 2 significa que hay cambios (drift detectado).
-terraform plan -detailed-exitcode
-# exit 0 = sin cambios
-# exit 1 = error
-# exit 2 = hay cambios planificados
-```
-
 ## Conceptos Aprendidos
 
-- Que es configuration drift y por que ocurre
-- `terraform plan` como herramienta de deteccion
-- Opciones de reconciliacion: revertir vs adoptar vs ignorar
-- `ignore_changes` para campos gestionados externamente
-- `terraform plan -refresh-only` para actualizar el state sin modificar recursos
+| Concepto | Descripcion |
+|---|---|
+| Configuration drift | Brecha entre el estado deseado (codigo) y el estado real (infraestructura) |
+| `terraform plan` | Detecta drift comparando el state contra la realidad en el proveedor |
+| Reconciliacion | `terraform apply` revierte los cambios manuales al estado definido en el codigo |
+| `ignore_changes` | Indica a Terraform que ignore diferencias en campos especificos del recurso |
+| `awslocal` | Wrapper del CLI de AWS que apunta a LocalStack en lugar de AWS real |
 
 ---
 

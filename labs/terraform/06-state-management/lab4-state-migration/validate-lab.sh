@@ -2,65 +2,65 @@
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASSED=0; FAILED=0
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="${1:-/root/lab}"
 
 validate() {
     echo -n "  $1... "
     if eval "$2" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASS${NC}"; ((PASSED++))
+        echo -e "${GREEN}PASS${NC}"; ((PASSED++))
     else
-        echo -e "${RED}❌ FAIL${NC} — $3"; ((FAILED++))
+        echo -e "${RED}FAIL${NC} -- $3"; ((FAILED++))
     fi
 }
 
-echo -e "${YELLOW}🧪 Validando Lab 4: State Migration${NC}"
+echo -e "${YELLOW}Validando Lab 4: State Migration${NC}"
 echo "================================================"
 
 validate "Terraform instalado" \
     "terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | grep -q ." \
     "Instala Terraform >= 1.0"
 
-validate "Terraform inicializado" \
-    "test -d '$PROJECT_DIR/.terraform' || test -f '$PROJECT_DIR/terraform.tfstate'" \
-    "Ejecuta: terraform init"
+validate "LocalStack S3 esta corriendo" \
+    "curl -s http://localhost:4566/_localstack/health 2>/dev/null | grep -q '\"s3\"'" \
+    "Espera a que LocalStack arranque: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
 
-validate "Estado aplicado (terraform.tfstate)" \
-    "[ -f '$PROJECT_DIR/terraform.tfstate' ]" \
-    "Ejecuta: terraform apply -auto-approve"
+validate "Bucket tf-state-lab4 existe" \
+    "awslocal s3 ls 2>/dev/null | grep -q 'tf-state-lab4'" \
+    "Crea el bucket de destino: awslocal s3 mb s3://tf-state-lab4"
 
-validate "Estado NO tiene recursos con nombres viejo" \
-    "! terraform -chdir='$PROJECT_DIR' state list 2>/dev/null | grep -q '_viejo'" \
-    "Renombra los recursos con: terraform state mv local_file.archivo_viejo local_file.config"
+validate "backend.tf contiene bloque backend s3" \
+    "grep -q 'backend.*\"s3\"' '$PROJECT_DIR/backend.tf' 2>/dev/null" \
+    "Crea backend.tf con el bloque backend s3 del README"
 
-validate "Estado contiene local_file.config" \
-    "terraform -chdir='$PROJECT_DIR' state list 2>/dev/null | grep -q 'local_file\.config'" \
-    "El state debe mostrar local_file.config despues del state mv"
+validate "Terraform inicializado con backend S3 (.terraform/ presente)" \
+    "test -d '$PROJECT_DIR/.terraform'" \
+    "Ejecuta: terraform init -migrate-state -force-copy"
 
-validate "Modulo archivos en el estado" \
-    "terraform -chdir='$PROJECT_DIR' state list 2>/dev/null | grep -q 'module\.archivos'" \
-    "El state debe mostrar module.archivos.* — ejecuta terraform state mv local_file.log module.archivos.local_file.log"
+validate "No hay terraform.tfstate local (migrado a S3)" \
+    "[ ! -f '$PROJECT_DIR/terraform.tfstate' ]" \
+    "La migracion no se completo -- ejecuta: terraform init -migrate-state -force-copy"
 
-validate "Plan muestra No changes" \
+validate "State file existe en S3" \
+    "awslocal s3 ls s3://tf-state-lab4/lab4/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
+    "Ejecuta terraform init -migrate-state y verifica con: awslocal s3 ls s3://tf-state-lab4/lab4/"
+
+validate "terraform state list muestra aws_s3_bucket.app" \
+    "terraform -chdir='$PROJECT_DIR' state list 2>/dev/null | grep -q 'aws_s3_bucket\.app'" \
+    "El state remoto debe contener aws_s3_bucket.app tras la migracion"
+
+validate "terraform plan sin cambios (infraestructura integra)" \
     "terraform -chdir='$PROJECT_DIR' plan -detailed-exitcode 2>/dev/null; [ \$? -eq 0 ]" \
-    "Despues de state mv y actualizar main.tf, terraform plan no debe mostrar cambios"
-
-validate "migracion-backend.md creado" \
-    "[ -f '$PROJECT_DIR/migracion-backend.md' ]" \
-    "Crea migracion-backend.md con el comando cat > del README"
-
-validate "State respaldado (terraform.tfstate.pre-migracion)" \
-    "[ -f '$PROJECT_DIR/terraform.tfstate.pre-migracion' ]" \
-    "Ejecuta: cp terraform.tfstate terraform.tfstate.pre-migracion"
+    "Despues de la migracion, terraform plan debe mostrar No changes"
 
 echo ""
 echo "================================================"
 echo -e "Resultados: ${GREEN}${PASSED} PASS${NC} | ${RED}${FAILED} FAIL${NC}"
 
-if [ $FAILED -eq 0 ] && [ $PASSED -ge 7 ]; then
-    echo -e "${GREEN}🎉 ¡LABORATORIO COMPLETADO! Badge: Terraform State Migration${NC}"
+if [ $FAILED -eq 0 ]; then
+    echo -e "${GREEN}LABORATORIO COMPLETADO. Badge: Terraform State Migration${NC}"
     echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "$PROJECT_DIR/../../../.badge-tf-m6-lab4"
     exit 0
 else
-    echo -e "${RED}❌ LABORATORIO INCOMPLETO — revisa los puntos fallidos arriba.${NC}"
+    echo -e "${RED}LABORATORIO INCOMPLETO -- revisa los puntos fallidos arriba.${NC}"
     exit 1
 fi

@@ -4,7 +4,7 @@
 
 ## Objetivo
 
-Renombrar recursos en el state con `terraform state mv` sin destruir infraestructura, mover un recurso a un modulo en el state, y entender como funciona `terraform init -migrate-state` para cambiar de backend.
+Migrar el state de un backend local a un backend S3 remoto usando `terraform init -migrate-state`, verificar que el state remoto es identico al local, y confirmar que la infraestructura no cambia despues de la migracion.
 
 ## Duracion
 
@@ -14,16 +14,19 @@ Renombrar recursos en el state con `terraform state mv` sin destruir infraestruc
 
 - Labs 1, 2 y 3 del modulo 06 completados
 - Terraform instalado (`terraform version` >= 1.0)
+- LocalStack corriendo en el contenedor
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Preparar el directorio de trabajo
+### Paso 1: Verificar que LocalStack esta listo
 
 ```bash
-cd /root/lab
+curl -s http://localhost:4566/_localstack/health | jq .services.s3
 ```
 
-### Paso 2: Crear main.tf con nombres de recursos "viejos"
+Debe retornar `"running"` o `"available"`. Este lab usa S3 como destino de la migracion del state, asi que necesitas que el servicio este disponible antes de continuar.
+
+### Paso 2: Crear main.tf con backend local (sin bloque backend)
 
 ```bash
 touch main.tf
@@ -35,33 +38,44 @@ terraform {
   required_version = ">= 1.0"
 
   required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
 
-resource "local_file" "archivo_viejo" {
-  filename = "${path.module}/config.txt"
-  content  = "version=1.0\nentorno=dev\n"
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+
+  endpoints {
+    s3 = "http://localhost:4566"
+  }
 }
 
-resource "local_file" "datos_viejo" {
-  filename = "${path.module}/datos.txt"
-  content  = "usuario=admin\nrol=superuser\n"
+resource "aws_s3_bucket" "app" {
+  bucket = "mi-app-bucket-lab4"
+
+  tags = {
+    Entorno = "dev"
+    Lab     = "state-migration"
+  }
 }
 
-resource "local_file" "log_viejo" {
-  filename = "${path.module}/app.log"
-  content  = "INFO: aplicacion iniciada\n"
+output "bucket_name" {
+  value = aws_s3_bucket.app.bucket
 }
 EOF
 ```
 
-Los recursos tienen el sufijo `_viejo` para simular nombres incorrectos que necesitan refactorizacion. El objetivo es renombrarlos en el state sin destruir los archivos fisicos en disco.
+Cuando no hay bloque `backend` en la configuracion, Terraform usa el backend local por defecto y guarda el state en `terraform.tfstate` en el directorio de trabajo. Este es el punto de partida: una configuracion existente con state local que necesita migrarse a un backend remoto.
 
-### Paso 3: Inicializar y aplicar
+### Paso 3: Inicializar y aplicar con backend local
 
 ```bash
 terraform init
@@ -71,230 +85,130 @@ terraform init
 terraform apply -auto-approve
 ```
 
-```bash
-terraform state list
-```
+Terraform aplica la configuracion y crea el bucket `mi-app-bucket-lab4` en LocalStack. El state se guarda localmente en `terraform.tfstate`. Este es el escenario tipico de un proyecto que comenzo sin un backend remoto y ahora necesita ser compartido con el equipo.
 
-El state ahora contiene `local_file.archivo_viejo`, `local_file.datos_viejo`, y `local_file.log_viejo`. Los archivos fisicos `config.txt`, `datos.txt`, y `app.log` existen en disco.
-
-### Paso 4: Renombrar recursos con state mv
+### Paso 4: Verificar que el state local existe
 
 ```bash
-terraform state mv local_file.archivo_viejo local_file.config
-```
-
-```bash
-terraform state mv local_file.datos_viejo local_file.datos
-```
-
-```bash
-terraform state mv local_file.log_viejo local_file.log
+ls -la terraform.tfstate
 ```
 
 ```bash
 terraform state list
 ```
 
-`terraform state mv` renombra un recurso dentro del state sin tocar los archivos fisicos. Ahora el state muestra `local_file.config`, `local_file.datos`, `local_file.log`. Si ejecutaras `terraform plan` en este momento, Terraform querria destruir los recursos con nombres viejos porque el codigo aun los referencia — por eso el siguiente paso actualiza el codigo.
+`terraform.tfstate` debe existir en el directorio actual con el recurso `aws_s3_bucket.app`. Esta es la evidencia del estado antes de la migracion. Es el archivo que se copiara al backend S3.
 
-### Paso 5: Actualizar main.tf para que coincida con el state
+### Paso 5: Crear el bucket S3 de destino para el backend remoto
 
 ```bash
-cat > main.tf <<'EOF'
+awslocal s3 mb s3://tf-state-lab4
+```
+
+El bucket de destino debe existir antes de ejecutar la migracion. Si Terraform no puede conectarse al bucket durante `init -migrate-state`, el proceso fallara y el state local permanecera intacto.
+
+### Paso 6: Crear backend.tf con el bloque de backend S3
+
+```bash
+touch backend.tf
+```
+
+```bash
+cat > backend.tf <<'EOF'
 terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
-    }
+  backend "s3" {
+    bucket                      = "tf-state-lab4"
+    key                         = "lab4/terraform.tfstate"
+    region                      = "us-east-1"
+    endpoint                    = "http://localhost:4566"
+    access_key                  = "test"
+    secret_key                  = "test"
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    force_path_style            = true
   }
-}
-
-resource "local_file" "config" {
-  filename = "${path.module}/config.txt"
-  content  = "version=1.0\nentorno=dev\n"
-}
-
-resource "local_file" "datos" {
-  filename = "${path.module}/datos.txt"
-  content  = "usuario=admin\nrol=superuser\n"
-}
-
-resource "local_file" "log" {
-  filename = "${path.module}/app.log"
-  content  = "INFO: aplicacion iniciada\n"
 }
 EOF
 ```
 
-Ahora los nombres en el codigo (`local_file.config`, etc.) coinciden con los nombres en el state. El flujo correcto es siempre: primero `state mv`, luego actualizar el codigo. Si lo haces al reves, Terraform planea destruir y recrear.
+La migracion de backend se realiza en un archivo separado `backend.tf` para mantener limpio `main.tf`. Terraform permite dividir la configuracion en multiples archivos `.tf`. Al agregar este archivo, la proxima ejecucion de `terraform init` detectara el cambio de backend y ofrecera la migracion.
 
-### Paso 6: Verificar que plan muestra "No changes"
+### Paso 7: Migrar el state al backend S3
+
+```bash
+terraform init -migrate-state -force-copy
+```
+
+`terraform init -migrate-state` detecta que hay un state local y que el backend cambio a S3. El flag `-force-copy` acepta automaticamente la pregunta de confirmacion. Terraform copia el contenido de `terraform.tfstate` al bucket S3 en `lab4/terraform.tfstate` y luego elimina el archivo local.
+
+### Paso 8: Verificar que el state local ya no existe
+
+```bash
+ls terraform.tfstate 2>/dev/null && echo "AUN EXISTE - migracion no completa" || echo "OK - state local eliminado"
+```
+
+Tras una migracion exitosa, `terraform.tfstate` desaparece del directorio local porque el state ahora vive en S3. Si el archivo aun existe, la migracion no se completo correctamente.
+
+### Paso 9: Verificar que el state existe en S3
+
+```bash
+awslocal s3 ls s3://tf-state-lab4/lab4/
+```
+
+```bash
+terraform state list
+```
+
+`awslocal s3 ls` confirma que el archivo `terraform.tfstate` llego al bucket de destino. `terraform state list` lo recupera desde S3 y debe mostrar exactamente los mismos recursos que existian antes de la migracion.
+
+### Paso 10: Confirmar que no hay cambios de infraestructura
 
 ```bash
 terraform plan
 ```
 
-`terraform plan` debe mostrar "No changes. Your infrastructure matches the configuration." Esto confirma que el state mv fue exitoso: el state y el codigo son consistentes sin haber destruido ni recreado ningun archivo.
+`terraform plan` debe mostrar "No changes. Your infrastructure matches the configuration." Esto es la prueba definitiva de que la migracion fue exitosa: el state remoto es identico al local y la infraestructura real en LocalStack coincide con lo que describe el state.
 
-### Paso 7: Crear el modulo de destino
+### Paso 11: Ejecutar validacion
 
 ```bash
-mkdir -p modules/archivos
+cd /root/lab
 ```
 
 ```bash
-touch modules/archivos/main.tf
-```
-
-```bash
-cat > modules/archivos/main.tf <<'EOF'
-variable "prefix" {
-  type    = string
-  default = "app"
-}
-
-resource "local_file" "log" {
-  filename = "${path.module}/output/${var.prefix}-app.log"
-  content  = "INFO: log gestionado por modulo\n"
-}
-EOF
-```
-
-```bash
-mkdir -p modules/archivos/output
-```
-
-El modulo `modules/archivos` encapsula la gestion del log. Crear el directorio `output/` dentro del modulo es necesario porque `local_file` no crea directorios intermedios automaticamente.
-
-### Paso 8: Actualizar el root main.tf para usar el modulo
-
-```bash
-cat > main.tf <<'EOF'
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
-    }
-  }
-}
-
-resource "local_file" "config" {
-  filename = "${path.module}/config.txt"
-  content  = "version=1.0\nentorno=dev\n"
-}
-
-resource "local_file" "datos" {
-  filename = "${path.module}/datos.txt"
-  content  = "usuario=admin\nrol=superuser\n"
-}
-
-module "archivos" {
-  source = "./modules/archivos"
-  prefix = "dev"
-}
-EOF
-```
-
-El recurso `local_file.log` se elimina del root y ahora vive dentro de `module.archivos`. Antes de hacer el `state mv` al modulo, hay que hacer `terraform init` para registrar el nuevo modulo.
-
-### Paso 9: Re-inicializar por el nuevo modulo
-
-```bash
-terraform init
-```
-
-`terraform init` es necesario siempre que se agrega un nuevo `module` o `provider`. Sin este paso, Terraform no conoce la ruta del modulo y el `state mv` fallaria.
-
-### Paso 10: Mover el recurso log al modulo en el state
-
-```bash
-terraform state mv local_file.log module.archivos.local_file.log
-```
-
-```bash
-terraform state list
-```
-
-`terraform state mv` puede mover recursos no solo entre nombres sino tambien entre el root y un modulo. La sintaxis de destino `module.archivos.local_file.log` usa el nombre del bloque `module` en el root seguido del address del recurso dentro del modulo.
-
-### Paso 11: Verificar integridad con plan
-
-```bash
-terraform apply -auto-approve
-```
-
-```bash
-terraform state list
-```
-
-El apply confirma que el state y el codigo son consistentes. El state debe mostrar `local_file.config`, `local_file.datos`, y `module.archivos.local_file.log`. Los archivos fisicos no fueron destruidos ni recreados en ningun momento del proceso.
-
-### Paso 12: Respaldar el state y documentar la migracion de backend
-
-```bash
-cp terraform.tfstate terraform.tfstate.pre-migracion
-```
-
-```bash
-touch migracion-backend.md
-```
-
-```bash
-cat > migracion-backend.md <<'EOF'
-# Proceso de Migracion de Backend
-
-## Cuando necesitas migrar el backend
-- Pasar de state local a S3 (primer despliegue en equipo)
-- Cambiar de region o bucket S3
-- Mover de un cloud a otro
-
-## Pasos para migrar de local a S3
-1. Respaldar el state actual: cp terraform.tfstate terraform.tfstate.backup
-2. Agregar bloque backend en main.tf o backend.tf:
-   terraform { backend "s3" { bucket = "..." key = "..." region = "..." } }
-3. Ejecutar: terraform init -migrate-state
-   Terraform pregunta: "Do you want to copy existing state to the new backend? (yes)"
-4. Verificar: terraform state list (debe mostrar los mismos recursos)
-5. Verificar: terraform plan (debe mostrar No changes)
-
-## Notas importantes
-- Nunca borrar terraform.tfstate local hasta confirmar que el remote tiene el state
-- Si algo falla, restaurar desde el backup y quitar el bloque backend
-EOF
-```
-
-Respaldar el state antes de cualquier operacion de migracion es un habito critico. Si la migracion falla a mitad, el backup local permite restaurar sin perder el historial de recursos gestionados.
-
-### Paso 13: Ejecutar validacion
-
-```bash
-cd /root/lab && bash validate-lab.sh
+bash validate-lab.sh
 ```
 
 ## Criterios de Validacion
 
-1. Terraform inicializado (`.terraform/` presente)
-2. `terraform.tfstate` existe
-3. El state NO contiene recursos con sufijo `_viejo`
-4. El state contiene `module.archivos`
-5. `terraform plan` muestra "No changes"
-6. `local_file.config` esta en el state con nombre correcto
-7. `migracion-backend.md` creado
+1. LocalStack S3 en estado `running`
+2. Bucket `tf-state-lab4` existe
+3. `terraform.tfstate` local no existe (migrado a S3)
+4. State file en S3 en `lab4/terraform.tfstate`
+5. `terraform state list` muestra `aws_s3_bucket.app`
+6. `terraform plan` muestra sin cambios (exit code 0)
+7. `backend.tf` contiene bloque `backend "s3"`
+
+## Proceso de Migracion de Backend
+
+| Paso | Comando | Descripcion |
+|------|---------|-------------|
+| 1 | `awslocal s3 mb s3://bucket` | Crear el bucket de destino |
+| 2 | Crear `backend.tf` | Agregar bloque `backend "s3"` |
+| 3 | `terraform init -migrate-state` | Copiar state local a S3 |
+| 4 | `terraform state list` | Verificar recursos en state remoto |
+| 5 | `terraform plan` | Confirmar sin cambios de infraestructura |
 
 ## Conceptos Aprendidos
 
-- `terraform state mv` para renombrar sin destruir recursos
-- `terraform state mv` para mover recursos a modulos
-- Por que hay que actualizar el codigo despues del `state mv`
-- Proceso de migracion de backend (`init -migrate-state`)
-- Validar integridad con `terraform plan` (No changes)
-- Importancia de respaldar el state antes de operaciones
+| Concepto | Descripcion |
+|----------|-------------|
+| Backend local | State guardado en `terraform.tfstate` en disco local |
+| `terraform init -migrate-state` | Comando que copia el state al nuevo backend |
+| `-force-copy` | Acepta automaticamente la confirmacion de migracion |
+| Validacion post-migracion | `terraform plan` sin cambios confirma integridad del state |
+| `backend.tf` separado | Convencion para separar la config del backend del codigo |
+| State eliminado localmente | Tras migracion exitosa, el archivo local desaparece |
 
 ---
 
