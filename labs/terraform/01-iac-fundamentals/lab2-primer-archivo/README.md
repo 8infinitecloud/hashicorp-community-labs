@@ -41,9 +41,9 @@ output "hello_world" {
   value = "¡Hola desde Terraform!"
 }
 
-# Output con información del sistema
-output "terraform_version" {
-  value = "Usando Terraform ${terraform.version}"
+# Output con información del workspace
+output "workspace_info" {
+  value = "Workspace actual: ${terraform.workspace}"
 }
 
 # Variable local
@@ -140,7 +140,7 @@ metadata = {
   "project" = "Mi Primer Proyecto"
 }
 project_info = "Mi Primer Proyecto - desarrollo"
-terraform_version = "Usando Terraform 1.7.0"
+workspace_info = "Workspace actual: default"
 ```
 
 ### Paso 8: Ver los Outputs
