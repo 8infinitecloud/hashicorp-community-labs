@@ -1,51 +1,59 @@
-# Lab 3: Simular Infraestructura con Terraform Local
+# Lab 3: Infraestructura Local con Terraform
 
-![Terraform](https://img.shields.io/badge/Terraform-Local%20Infrastructure-7B42BC?style=flat&logo=terraform)
+## Objetivo
 
-## 🎯 Objetivo
-Crear una "infraestructura" local usando Terraform para entender Infrastructure as Code sin necesidad de cloud providers.
+Crear una infraestructura simulada usando el provider `local` de Terraform, aplicando variables, locals, condicionales y outputs para entender cómo IaC genera configuraciones reales sin necesitar un cloud provider.
 
-## ⏱️ Duración
+## Duración
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 1 completado (Terraform instalado)
-- ✅ Lab 2 completado (Primer archivo Terraform)
-- Editor de texto
-- Terminal/línea de comandos
+## Prerrequisitos
 
-## 🎬 Escenario
+- Lab 1 y Lab 2 del Módulo 1 completados
+- Terraform instalado (verificar con `terraform version`)
 
-Vas a simular la creación de una aplicación web con su configuración completa, usando solo archivos locales. Esto te permitirá entender cómo funciona IaC sin necesidad de una cuenta de AWS, Azure o GCP.
+## Escenario
 
-**Lo que crearás:**
-- Archivo de configuración de la aplicación
-- Variables de entorno
-- Script de deployment
-- Documentación automática
+Simularás el despliegue de una aplicación web generando sus archivos de configuración, variables de entorno y script de deployment mediante Terraform. La misma configuración funciona para desarrollo y producción simplemente cambiando una variable.
 
-Todo generado automáticamente por Terraform basado en variables.
+## Instrucciones
 
-## 🚀 Instrucciones Paso a Paso
-
-### Paso 1: Crear el Directorio del Proyecto
+### Paso 1: Crear el directorio del proyecto
 
 ```bash
-# Crear directorio
 mkdir lab3-iac-demo
+```
+
+Crea el directorio de trabajo donde vivirán todos los archivos del lab.
+
+```bash
 cd lab3-iac-demo
 ```
 
-### Paso 2: Crear el Archivo main.tf
+Entra al directorio para que todos los comandos siguientes operen dentro de él.
 
-Crea un archivo `main.tf` con el siguiente contenido:
+### Paso 2: Crear el archivo main.tf
 
-```hcl
-# main.tf - Simulación de infraestructura web
+```bash
+touch main.tf
+```
 
-# Variables de configuración
+Crea el archivo vacío antes de escribir su contenido.
+
+```bash
+cat > main.tf <<'EOF'
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
+  }
+}
+
 variable "app_name" {
-  description = "Nombre de la aplicación"
+  description = "Nombre de la aplicacion"
   type        = string
   default     = "MiAppPeruana"
 }
@@ -57,36 +65,29 @@ variable "environment" {
 }
 
 variable "region" {
-  description = "Región simulada"
+  description = "Region simulada"
   type        = string
-  default     = "sa-east-1"  # São Paulo
+  default     = "sa-east-1"
 }
 
-# Locals para datos calculados
 locals {
-  timestamp = formatdate("YYYY-MM-DD hh:mm:ss", timestamp())
-  app_port  = var.environment == "produccion" ? 443 : 8080
-  replicas  = var.environment == "produccion" ? 3 : 1
+  app_port = var.environment == "produccion" ? 443 : 8080
+  replicas = var.environment == "produccion" ? 3 : 1
 }
 
-# Simular archivo de configuración de la app
 resource "local_file" "app_config" {
   filename = "config/app.conf"
   content  = <<-EOT
-    # Configuración de ${var.app_name}
-    # Generado automáticamente por Terraform
-    # Fecha: ${local.timestamp}
-    
     [application]
     name = "${var.app_name}"
     environment = "${var.environment}"
     port = ${local.app_port}
-    
+
     [deployment]
     region = "${var.region}"
     replicas = ${local.replicas}
     auto_scaling = ${var.environment == "produccion" ? "enabled" : "disabled"}
-    
+
     [database]
     host = "db-${var.environment}.${var.region}.rds.amazonaws.com"
     port = 5432
@@ -94,7 +95,6 @@ resource "local_file" "app_config" {
   EOT
 }
 
-# Simular archivo de variables de entorno
 resource "local_file" "env_file" {
   filename = "config/.env"
   content  = <<-EOT
@@ -102,92 +102,28 @@ resource "local_file" "env_file" {
     APP_ENV=${var.environment}
     APP_PORT=${local.app_port}
     APP_REGION=${var.region}
-    
-    # Database
     DB_HOST=db-${var.environment}.${var.region}.rds.amazonaws.com
     DB_PORT=5432
     DB_NAME=${lower(var.app_name)}_${var.environment}
-    
-    # Generado: ${local.timestamp}
   EOT
 }
 
-# Simular script de deployment
 resource "local_file" "deploy_script" {
   filename        = "scripts/deploy.sh"
+  file_permission = "0755"
   content         = <<-EOT
     #!/bin/bash
-    # Script de deployment para ${var.app_name}
-    # Ambiente: ${var.environment}
-    # Generado automáticamente por Terraform
-    
-    echo "🚀 Deploying ${var.app_name} to ${var.environment}..."
-    echo "📍 Region: ${var.region}"
-    echo "🔢 Replicas: ${local.replicas}"
-    echo "🔌 Port: ${local.app_port}"
-    
-    # Simular deployment
-    echo "✅ Configuration loaded from config/app.conf"
-    echo "✅ Environment variables loaded from config/.env"
-    echo "✅ Starting ${local.replicas} instance(s)..."
-    echo "🎉 Deployment complete!"
-    echo ""
+    echo "Deploying ${var.app_name} to ${var.environment}..."
+    echo "Region: ${var.region}"
+    echo "Replicas: ${local.replicas}"
+    echo "Port: ${local.app_port}"
+    echo "Configuration loaded from config/app.conf"
+    echo "Starting ${local.replicas} instance(s)..."
+    echo "Deployment complete!"
     echo "Access your app at: http://localhost:${local.app_port}"
   EOT
-  file_permission = "0755"
 }
 
-# Simular README de la infraestructura
-resource "local_file" "readme" {
-  filename = "README.md"
-  content  = <<-EOT
-    # ${var.app_name} - Infraestructura
-    
-    ## Información del Deployment
-    
-    - **Aplicación:** ${var.app_name}
-    - **Ambiente:** ${var.environment}
-    - **Región:** ${var.region}
-    - **Puerto:** ${local.app_port}
-    - **Réplicas:** ${local.replicas}
-    - **Generado:** ${local.timestamp}
-    
-    ## Archivos Generados
-    
-    - \`config/app.conf\` - Configuración de la aplicación
-    - \`config/.env\` - Variables de entorno
-    - \`scripts/deploy.sh\` - Script de deployment
-    
-    ## Comandos
-    
-    \`\`\`bash
-    # Ver configuración
-    cat config/app.conf
-    
-    # Ejecutar deployment
-    ./scripts/deploy.sh
-    
-    # Actualizar infraestructura
-    terraform apply
-    
-    # Destruir infraestructura
-    terraform destroy
-    \`\`\`
-    
-    ## Cambiar Ambiente
-    
-    Para cambiar a producción:
-    
-    \`\`\`bash
-    terraform apply -var="environment=produccion"
-    \`\`\`
-    
-    ---
-    Infraestructura gestionada con Terraform 💜
-  EOT
-}
-
-# Outputs para mostrar información
 output "app_info" {
   value = {
     name        = var.app_name
@@ -203,234 +139,110 @@ output "files_created" {
     local_file.app_config.filename,
     local_file.env_file.filename,
     local_file.deploy_script.filename,
-    local_file.readme.filename
   ]
 }
-
-output "next_steps" {
-  value = <<-EOT
-    
-    ✅ Infraestructura creada exitosamente!
-    
-    Próximos pasos:
-    1. Revisa los archivos: ls -la config/ scripts/
-    2. Lee el README: cat README.md
-    3. Ejecuta el deploy: ./scripts/deploy.sh
-    4. Cambia a producción: terraform apply -var="environment=produccion"
-  EOT
-}
+EOF
 ```
 
-### Paso 3: Inicializar y Aplicar
+Define tres recursos `local_file`: el archivo de configuración de la app, el archivo `.env` con variables de entorno, y el script de deployment. Los locals calculan el puerto y número de réplicas según el ambiente, demostrando que el mismo código sirve para desarrollo y producción.
+
+### Paso 3: Inicializar Terraform
 
 ```bash
-# Inicializar Terraform
 terraform init
+```
 
-# Ver el plan
+Descarga el provider `hashicorp/local` y configura el directorio `.terraform`. Este paso es obligatorio antes de cualquier plan o apply.
+
+### Paso 4: Ver el plan de ejecución
+
+```bash
 terraform plan
-
-# Aplicar la configuración
-terraform apply
 ```
 
-Terraform te mostrará qué archivos va a crear. Escribe `yes` para confirmar.
+Muestra exactamente qué archivos va a crear Terraform sin aplicar ningún cambio. Revisa los valores calculados para `app_port` y `replicas` en el ambiente `desarrollo`.
 
-### Paso 4: Explorar los Archivos Generados
+### Paso 5: Aplicar la configuración
 
 ```bash
-# Ver estructura creada
-tree .
-# o
-ls -la
-
-# Ver configuración de la app
-cat config/app.conf
-
-# Ver variables de entorno
-cat config/.env
-
-# Ver el README generado
-cat README.md
+terraform apply -auto-approve
 ```
 
-### Paso 5: Ejecutar el Script de Deployment
+Crea los tres archivos (`config/app.conf`, `config/.env`, `scripts/deploy.sh`) y registra todos los recursos en el state file. Terraform crea los subdirectorios automáticamente.
+
+### Paso 6: Verificar los archivos generados
 
 ```bash
-# Ejecutar el script generado
-./scripts/deploy.sh
-```
-
-### Paso 6: Cambiar a Producción
-
-```bash
-# Aplicar con ambiente de producción
-terraform apply -var="environment=produccion"
-
-# Observa los cambios:
-# - Puerto cambia de 8080 a 443
-# - Réplicas cambian de 1 a 3
-# - Auto-scaling se habilita
-
-# Ver la nueva configuración
-cat config/app.conf
-```
-
-### Paso 7: Experimentar con Variables
-
-```bash
-# Cambiar nombre de la app y región
-terraform apply \
-  -var="app_name=TiendaOnline" \
-  -var="environment=produccion" \
-  -var="region=us-east-1"
-
-# Ver cómo cambió todo
-cat config/app.conf
-cat README.md
-```
-
-### Paso 8: Limpiar Todo
-
-```bash
-# Destruir la infraestructura (eliminar archivos)
-terraform destroy
-
-# Confirma con: yes
-
-# Verificar que se eliminaron
 ls -la config/ scripts/
 ```
 
-### Paso 9: Ejecutar Validación
+Confirma que Terraform creó los subdirectorios y los tres archivos. El script `deploy.sh` debe aparecer con permisos `755`.
 
 ```bash
-# Volver al directorio del lab
-cd ..
-
-# Ejecutar validación
-./validate-lab.sh
+cat config/app.conf
 ```
 
-## 🧪 Experimentos Adicionales
+Revisa la configuración generada: puerto `8080`, una sola réplica y auto-scaling desactivado, valores propios del ambiente `desarrollo`.
 
-### Experimento 1: Crear Archivo de Variables
-
-Crea un archivo `terraform.tfvars`:
-
-```hcl
-app_name    = "EcommercePeru"
-environment = "staging"
-region      = "sa-east-1"
-```
-
-Aplica sin especificar variables en la línea de comandos:
-```bash
-terraform apply
-```
-
-### Experimento 2: Agregar Más Archivos
-
-Agrega un nuevo recurso al `main.tf`:
-
-```hcl
-resource "local_file" "docker_compose" {
-  filename = "docker-compose.yml"
-  content  = <<-EOT
-    version: '3.8'
-    services:
-      app:
-        image: ${lower(var.app_name)}:latest
-        ports:
-          - "${local.app_port}:${local.app_port}"
-        environment:
-          - APP_ENV=${var.environment}
-        replicas: ${local.replicas}
-  EOT
-}
-```
-
-### Experimento 3: Usar Condicionales
-
-Agrega lógica condicional:
-
-```hcl
-resource "local_file" "monitoring" {
-  count    = var.environment == "produccion" ? 1 : 0
-  filename = "config/monitoring.conf"
-  content  = "Monitoring enabled for production"
-}
-```
-
-Esto solo crea el archivo en producción.
-
-## ✅ Criterios de Validación
-
-Para completar exitosamente este laboratorio:
-
-1. ✅ Proyecto `lab3-iac-demo` creado
-2. ✅ Archivo `main.tf` con configuración completa
-3. ✅ `terraform apply` ejecutado exitosamente
-4. ✅ Archivos generados en `config/` y `scripts/`
-5. ✅ Script de deployment ejecutado
-6. ✅ Cambio a producción probado
-7. ✅ `terraform destroy` ejecutado
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ **Variables de entrada**: Parametrizar configuraciones
-- ✅ **Locals**: Calcular valores dinámicamente
-- ✅ **Condicionales**: Lógica basada en variables
-- ✅ **Recursos**: Crear archivos con `local_file`
-- ✅ **Interpolación**: Usar variables en strings
-- ✅ **Outputs**: Mostrar información útil
-- ✅ **Idempotencia**: Ejecutar múltiples veces sin problemas
-- ✅ **Destroy**: Limpiar recursos creados
-
-## 💡 ¿Qué Aprendiste?
-
-Este lab demuestra conceptos clave de IaC:
-
-1. **Declarativo**: Describes QUÉ quieres, no CÓMO hacerlo
-2. **Reutilizable**: Mismo código para desarrollo y producción
-3. **Versionable**: Todo en archivos que puedes versionar en Git
-4. **Consistente**: Siempre genera la misma configuración
-5. **Automatizable**: Perfecto para CI/CD
-
-**En el mundo real**, en lugar de archivos locales crearías:
-- Instancias EC2 en AWS
-- Virtual Machines en Azure
-- Compute Instances en GCP
-- Redes, bases de datos, balanceadores, etc.
-
-¡Pero el concepto es exactamente el mismo!
-
-## 🔧 Troubleshooting
-
-### Error: "Error creating file"
+### Paso 7: Cambiar a producción
 
 ```bash
-# Verificar permisos del directorio
-ls -la
-
-# Crear directorios manualmente si es necesario
-mkdir -p config scripts
+terraform apply -auto-approve -var="environment=produccion"
 ```
 
-### Error: "Invalid template interpolation"
+Aplica el mismo código con una variable diferente. Terraform detecta el drift entre el state actual y el nuevo plan, y actualiza los archivos. Verifica que ahora el puerto es `443`, las réplicas son `3` y auto-scaling está `enabled`.
 
 ```bash
-# Verificar sintaxis de interpolación
-terraform validate
-
-# Asegúrate de usar ${} correctamente
+cat config/app.conf
 ```
 
-## 🏆 Badge
+Confirma que el archivo refleja los nuevos valores de producción, demostrando idempotencia y reutilización del mismo código base.
 
-Al completar este laboratorio obtienes: **Terraform IaC Fundamentals Badge**
+### Paso 8: Ejecutar el script de deployment
+
+```bash
+bash scripts/deploy.sh
+```
+
+Ejecuta el script generado por Terraform para verificar que es ejecutable y muestra los valores correctos del ambiente activo.
+
+### Paso 9: Destruir la infraestructura
+
+```bash
+terraform destroy -auto-approve
+```
+
+Elimina todos los archivos gestionados por Terraform y limpia el state. Los directorios vacíos quedan en el sistema de archivos, pero los recursos de Terraform desaparecen.
+
+### Paso 10: Volver al directorio del lab y validar
+
+```bash
+cd /root/lab
+```
+
+Regresa al directorio raíz del lab donde se encuentra el script de validación.
+
+```bash
+bash validate-lab.sh
+```
+
+Ejecuta todas las verificaciones automáticas para confirmar que el lab fue completado correctamente.
+
+## Conceptos
+
+| Concepto | Descripcion |
+|---|---|
+| `variable` | Parametro de entrada que personaliza la configuracion sin cambiar el codigo |
+| `locals` | Valores calculados a partir de variables, disponibles dentro del modulo |
+| Condicional ternario | `condition ? true_val : false_val` — logica dinamica dentro de HCL |
+| `local_file` | Recurso del provider `local` que crea un archivo en disco |
+| `file_permission` | Permisos Unix del archivo generado, en formato octal como string |
+| Interpolacion | `"${var.name}"` inserta el valor de una variable dentro de un string |
+| `output` | Expone valores del modulo para inspeccion o consumo por otros modulos |
+| Idempotencia | Aplicar el mismo plan multiples veces produce el mismo resultado final |
+| `terraform destroy` | Elimina todos los recursos gestionados por el state actual |
 
 ---
 
-**Anterior:** [Lab 2 - Primer Archivo](../lab2-primer-archivo/)  
-**Siguiente:** [Módulo 2 - Terraform Fundamentals](../../02-terraform-fundamentals/)
+**Anterior:** [Lab 2 - Primer Archivo](../lab2-primer-archivo/)
+**Siguiente:** [Modulo 2 - Terraform Fundamentals](../../02-terraform-fundamentals/)

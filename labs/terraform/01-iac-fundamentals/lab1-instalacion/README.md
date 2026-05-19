@@ -29,7 +29,7 @@ Deberías ver algo como: `terraform_1.9.5_linux_amd64.zip`
 Extrae el binario de Terraform al directorio `/tmp/`:
 
 ```bash
-unzip /opt/downloads/terraform_*.zip -d /tmp/
+unzip -o /opt/downloads/terraform_*.zip terraform -d /tmp/
 ```
 
 ### Paso 3: Instalar el binario en el PATH
@@ -38,10 +38,15 @@ Mueve el binario a `/usr/local/bin/` para que quede disponible en todo el sistem
 
 ```bash
 mv /tmp/terraform /usr/local/bin/
+```
+
+### Paso 4: Dar permisos de ejecución
+
+```bash
 chmod +x /usr/local/bin/terraform
 ```
 
-### Paso 4: Verificar la instalación
+### Paso 5: Verificar la instalación
 
 Confirma que Terraform está correctamente instalado:
 
@@ -51,13 +56,13 @@ terraform version
 
 Deberías ver algo como: `Terraform v1.9.5`
 
-### Paso 5: Explorar los comandos disponibles
+### Paso 6: Explorar los comandos disponibles
 
 ```bash
 terraform -help
 ```
 
-### Paso 6: Ejecutar el script de validación
+### Paso 7: Ejecutar el script de validación
 
 ```bash
 bash /root/lab/validate-lab.sh

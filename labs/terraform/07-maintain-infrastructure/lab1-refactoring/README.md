@@ -2,30 +2,50 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Refactoring-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
+## Objetivo
 Refactorizar configuraciones Terraform usando `moved` blocks para renombrar y mover recursos sin recrearlos.
 
-## ⏱️ Duración
+## Duracion
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Módulo 06 completado
+## Prerrequisitos
+- Modulo 06 completado
 - Terraform >= 1.1 instalado (para `moved` blocks)
 
-## 🚀 Instrucciones Paso a Paso
+## Instrucciones Paso a Paso
 
-### Paso 1: Crear la Configuración Original
+### Paso 1: Preparar el directorio de trabajo
 
 ```bash
-mkdir lab1-refactoring
-cd lab1-refactoring
+mkdir -p /root/lab
+cd /root/lab
 ```
 
-Crea `main.tf` — configuración inicial "antes del refactor":
+Crea el directorio de salida donde se escribiran los archivos gestionados.
 
-```hcl
+```bash
+mkdir -p output
+```
+
+Los archivos gestionados por Terraform se guardan en `output/` para mantener el directorio raiz limpio.
+
+### Paso 2: Crear la configuracion inicial (nombres genericos)
+
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.1"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
+  }
 }
 
 # Nombres "malos" que queremos mejorar
@@ -43,29 +63,42 @@ resource "local_file" "f3" {
   filename = "${path.module}/output/inventario.ini"
   content  = "[servidores]\nweb1 ansible_host=10.0.1.1\n"
 }
+EOF
+```
+
+Define tres recursos `local_file` con nombres cortos poco descriptivos (`f1`, `f2`, `f3`). Este es el estado inicial "antes del refactor" que vamos a mejorar.
+
+```bash
+terraform init
 ```
 
 ```bash
-mkdir -p output
-terraform init
 terraform apply -auto-approve
-terraform state list
-# local_file.f1
-# local_file.f2
-# local_file.f3
 ```
 
-### Paso 2: Refactorizar con moved blocks
+```bash
+terraform state list
+```
 
-Actualiza `main.tf` con los nombres nuevos Y los `moved` blocks:
+`terraform state list` muestra los tres recursos con sus nombres actuales. El objetivo del lab es renombrarlos sin destruir y recrear los archivos.
 
-```hcl
+### Paso 3: Agregar moved blocks y renombrar los recursos
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.1"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
+  }
 }
 
-# moved blocks: indican a Terraform que el recurso se renombró
-# NO hay que ejecutar terraform state mv manualmente
+# moved blocks: indican a Terraform que el recurso se renombro en el codigo.
+# Terraform actualiza el state sin destruir ni recrear el recurso.
 moved {
   from = local_file.f1
   to   = local_file.config
@@ -96,51 +129,72 @@ resource "local_file" "inventario" {
   filename = "${path.module}/output/inventario.ini"
   content  = "[servidores]\nweb1 ansible_host=10.0.1.1\n"
 }
+EOF
+```
+
+Cada bloque `moved { from = ... to = ... }` le dice a Terraform que el recurso fue renombrado en el codigo. Terraform actualiza el state internamente sin tocar los archivos fisicos.
+
+```bash
+terraform plan
+```
+
+El plan debe mostrar solo los `moved` y cero destrucciones. Si ves `will be destroyed` + `will be created`, algo esta mal en los nombres.
+
+```bash
+terraform apply -auto-approve
 ```
 
 ```bash
-# Plan DEBE mostrar solo los moved, NO recreaciones
-terraform plan
-
-# Si el plan dice "No changes" o solo "moved", está bien
-# Si dice "will be destroyed" y "will be created", algo está mal
-terraform apply -auto-approve
-
-# Verificar que los archivos siguen existiendo
-ls output/
 terraform state list
-# local_file.config
-# local_file.credenciales
-# local_file.inventario
 ```
 
-### Paso 3: Mover un Recurso a un Módulo con moved
+Despues del apply el state muestra `local_file.config`, `local_file.credenciales` e `local_file.inventario`. Los archivos fisicos en `output/` no fueron tocados.
 
-Crea `modulos/secretos/main.tf`:
+### Paso 4: Mover un recurso a un modulo con moved
 
 ```bash
 mkdir -p modulos/secretos
 ```
 
-```hcl
-# modulos/secretos/main.tf
-variable "contenido" { type = string }
-variable "ruta"      { type = string }
+```bash
+touch modulos/secretos/main.tf
+```
+
+```bash
+cat > modulos/secretos/main.tf <<'EOF'
+variable "contenido" {
+  type        = string
+  description = "Contenido del archivo de credenciales"
+}
+
+variable "ruta" {
+  type        = string
+  description = "Ruta absoluta donde se escribe el archivo"
+}
 
 resource "local_file" "archivo" {
   filename = var.ruta
   content  = var.contenido
 }
+EOF
 ```
 
-Actualiza `main.tf` moviendo `credenciales` al módulo:
+El modulo `secretos` encapsula la logica de crear un archivo de credenciales. Al extraerlo a un modulo, otros proyectos pueden reutilizarlo.
 
-```hcl
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.1"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
+  }
 }
 
-# moved: mover recurso al módulo
+# moved: mueve el recurso existente al modulo sin recrearlo
 moved {
   from = local_file.credenciales
   to   = module.secretos.local_file.archivo
@@ -161,66 +215,110 @@ module "secretos" {
   contenido = "db_host=localhost\ndb_port=5432\n"
   ruta      = "${path.module}/output/secretos.txt"
 }
+EOF
+```
+
+El bloque `moved` con `to = module.secretos.local_file.archivo` mueve la entrada del state al namespace del modulo. Terraform no eliminara ni recreara el archivo fisico en disco.
+
+```bash
+terraform init
 ```
 
 ```bash
-terraform init   # re-init por nuevo módulo
-terraform plan   # NO debe recrear el archivo
+terraform plan
+```
 
+```bash
 terraform apply -auto-approve
+```
+
+```bash
 terraform state list
-# local_file.config
-# local_file.inventario
-# module.secretos.local_file.archivo
 ```
 
-### Paso 4: Limpiar moved blocks
+El state ahora muestra `module.secretos.local_file.archivo` en lugar de `local_file.credenciales`. El archivo `output/secretos.txt` permanece intacto.
 
-Una vez que todos los colaboradores del equipo han ejecutado el apply, los `moved` blocks pueden eliminarse:
+### Paso 5: Eliminar los moved blocks (limpieza)
+
+Una vez que todos los colaboradores han ejecutado el apply, los `moved` blocks se pueden eliminar del codigo sin efecto en el state.
 
 ```bash
-# Edita main.tf y elimina todos los bloques moved { ... }
-# El state ya tiene los recursos en la ubicación correcta
-terraform plan   # debe seguir sin cambios
+cat > main.tf <<'EOF'
+terraform {
+  required_version = ">= 1.1"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
+  }
+}
+
+resource "local_file" "config" {
+  filename = "${path.module}/output/config.json"
+  content  = jsonencode({ entorno = "dev", version = "1.0" })
+}
+
+resource "local_file" "inventario" {
+  filename = "${path.module}/output/inventario.ini"
+  content  = "[servidores]\nweb1 ansible_host=10.0.1.1\n"
+}
+
+module "secretos" {
+  source    = "./modulos/secretos"
+  contenido = "db_host=localhost\ndb_port=5432\n"
+  ruta      = "${path.module}/output/secretos.txt"
+}
+EOF
+```
+
+```bash
+terraform plan
+```
+
+El plan debe mostrar `No changes`. Los `moved` blocks solo son necesarios durante la transicion; una vez que el state refleja la nueva ubicacion, son redundantes.
+
+```bash
 terraform apply -auto-approve
 ```
 
-### Paso 5: Ejecutar Validación
+### Paso 6: Ejecutar validacion
 
 ```bash
-./validate-lab.sh
+cd /root/lab
 ```
 
-## ✅ Criterios de Validación
+```bash
+bash validate-lab.sh
+```
 
-1. ✅ `moved` blocks usados para renombrar recursos
-2. ✅ `terraform plan` no muestra recreaciones
-3. ✅ Archivos físicos intactos después del refactor
-4. ✅ Recurso movido a módulo sin recreación
-5. ✅ `moved` blocks eliminados al final
+## Criterios de Validacion
 
-## 💡 moved vs state mv
+1. `moved` blocks usados para renombrar recursos
+2. `terraform plan` no muestra recreaciones
+3. Archivos fisicos intactos despues del refactor
+4. Recurso movido a modulo sin recreacion
+5. `moved` blocks eliminados al final
+
+## moved vs terraform state mv
 
 | `moved` block | `terraform state mv` |
-|---------------|----------------------|
-| Declarativo — en el código | Imperativo — comando manual |
-| Se versiona en Git | No deja registro en código |
-| Compañeros ejecutan `apply` y migran | Requiere que cada persona ejecute el comando |
+|---|---|
+| Declarativo — en el codigo | Imperativo — comando manual |
+| Se versiona en Git | No deja registro en codigo |
+| Compañeros ejecutan `apply` y migran automaticamente | Requiere que cada persona ejecute el comando |
 | Recomendado para refactors en equipo | Para migraciones urgentes de una sola vez |
 
-## 🎓 Conceptos Aprendidos
+## Conceptos Aprendidos
 
-- ✅ `moved` blocks para renombrar recursos sin recrear
-- ✅ `moved` para mover recursos a módulos
-- ✅ Diferencia entre `moved` y `terraform state mv`
-- ✅ Cuándo eliminar los `moved` blocks
-- ✅ Validar refactors con `terraform plan`
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Refactoring Badge**
+- `moved` blocks para renombrar recursos sin recrear
+- `moved` para mover recursos a modulos
+- Diferencia entre `moved` y `terraform state mv`
+- Cuando eliminar los `moved` blocks
+- Validar refactors con `terraform plan`
 
 ---
 
-**Anterior:** [Módulo 06 - State Management](../../06-state-management/)
+**Anterior:** [Modulo 06 - State Management](../../06-state-management/)
 **Siguiente:** [Lab 2 - Upgrades](../lab2-upgrades/)

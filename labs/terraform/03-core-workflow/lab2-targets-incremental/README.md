@@ -2,235 +2,190 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Targeting-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Aprender a aplicar cambios incrementales usando targets para recursos específicos.
+## Objetivo
 
-## ⏱️ Duración
-30 minutos
+Usar la bandera `-target` de Terraform para aplicar y destruir recursos individuales de forma incremental, observar cómo Terraform respeta automáticamente las dependencias, y entender cuándo es apropiado usar targets versus un apply completo.
 
-## 📋 Prerrequisitos
-- ✅ Lab 1 completado
-- Terraform instalado
+## Duración
 
-## 🚀 Instrucciones Paso a Paso
+25 minutos
 
-### Paso 1: Crear el Proyecto
+## Prerrequisitos
+
+- Lab 1 completado
+- Terraform instalado (`terraform version` >= 1.0)
+
+## Instrucciones Paso a Paso
+
+### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-mkdir lab3-targets
-cd lab3-targets
+mkdir -p /root/lab
 ```
 
-### Paso 2: Crear main.tf
+El directorio `/root/lab` almacenará la configuración y el state de este lab. Usar una ruta fija facilita la validación automática al final.
 
-```hcl
-# main.tf - Múltiples recursos con dependencias
+### Paso 2: Crear el Archivo de Configuración
 
+```bash
+touch /root/lab/main.tf
+```
+
+Crear el archivo antes de escribir contenido es una práctica que hace explícita la intención y facilita la detección de errores de permisos.
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform {
+  required_version = ">= 1.0"
+
   required_providers {
     local = {
       source  = "hashicorp/local"
       version = "~> 2.4"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.5"
-    }
   }
 }
 
-# Recurso 1: ID aleatorio
-resource "random_id" "server" {
-  byte_length = 4
+# Recurso A: configuracion base (sin dependencias)
+resource "local_file" "base_config" {
+  filename = "/root/lab/output/base.conf"
+  content  = "env=lab\nversion=1.0\n"
 }
 
-# Recurso 2: Pet name
-resource "random_pet" "app_name" {
-  length    = 2
-  separator = "-"
+# Recurso B: depende de A (referencia a su filename)
+resource "local_file" "app_config" {
+  filename = "/root/lab/output/app.conf"
+  content  = "base_config=${local_file.base_config.filename}\napp=web\n"
 }
 
-# Recurso 3: Password
-resource "random_password" "db_password" {
-  length  = 16
-  special = true
+# Recurso C: log de auditoria (depende de B)
+resource "local_file" "audit_log" {
+  filename = "/root/lab/output/audit.log"
+  content  = "app_config=${local_file.app_config.filename}\nstatus=active\n"
 }
 
-# Recurso 4: Archivo de configuración (depende de random_id)
-resource "local_file" "config" {
-  filename = "config/server-${random_id.server.hex}.conf"
-  content  = <<-EOT
-    [server]
-    id = ${random_id.server.hex}
-    name = ${random_pet.app_name.id}
-    
-    [database]
-    password = ${random_password.db_password.result}
-  EOT
+# Recurso D: resumen (sin dependencias de A/B/C)
+resource "local_file" "summary" {
+  filename = "/root/lab/output/summary.txt"
+  content  = "Lab: targets-incremental\nRecursos: 4\n"
 }
 
-# Recurso 5: Archivo README (depende de todo)
-resource "local_file" "readme" {
-  filename = "README.md"
-  content  = <<-EOT
-    # Servidor ${random_pet.app_name.id}
-    
-    ID: ${random_id.server.hex}
-    Config: ${local_file.config.filename}
-  EOT
+output "all_files" {
+  value = [
+    local_file.base_config.filename,
+    local_file.app_config.filename,
+    local_file.audit_log.filename,
+    local_file.summary.filename,
+  ]
 }
-
-output "all_resources" {
-  value = {
-    server_id   = random_id.server.hex
-    app_name    = random_pet.app_name.id
-    config_file = local_file.config.filename
-    readme_file = local_file.readme.filename
-  }
-}
+EOF
 ```
 
-### Paso 3: Experimento 1 - Aplicar Solo un Recurso
+La configuración define cuatro recursos con una cadena de dependencias: `base_config` <- `app_config` <- `audit_log`, más `summary` independiente. Esta estructura permite demostrar cómo `-target` arrastra dependencias automáticamente.
+
+### Paso 3: Inicializar y Verificar la Sintaxis
 
 ```bash
-# Inicializar
-terraform init
-
-# Aplicar solo random_pet
-terraform plan -target=random_pet.app_name
-terraform apply -target=random_pet.app_name
-
-# Ver state (solo debe tener random_pet)
-terraform state list
-# Output: random_pet.app_name
+terraform -chdir=/root/lab init
 ```
 
-### Paso 4: Experimento 2 - Aplicar con Dependencias
+Descarga el provider `hashicorp/local` y crea `.terraform/`. Siempre es el primer paso antes de cualquier operación.
 
 ```bash
-# Intentar aplicar local_file.config
-terraform plan -target=local_file.config
-
-# Observa: Terraform detecta que necesita random_id también
-# Plan: 2 to add (random_id + local_file.config)
-
-terraform apply -target=local_file.config
-
-# Ver state
-terraform state list
-# Output:
-# local_file.config
-# random_id.server
-# random_pet.app_name
+terraform -chdir=/root/lab validate
 ```
 
-### Paso 5: Experimento 3 - Aplicar Todo lo Restante
+Confirma que las referencias entre recursos son válidas antes de invertir tiempo en un plan.
+
+### Paso 4: Aplicar Solo el Recurso Independiente (Target Individual)
 
 ```bash
-# Aplicar sin targets (crea lo que falta)
-terraform apply
-
-# Ver todos los recursos
-terraform state list
-
-# Ver outputs
-terraform output
+terraform -chdir=/root/lab apply -target=local_file.summary -auto-approve
 ```
 
-### Paso 6: Experimento 4 - Modificar con Target
+`-target=local_file.summary` le indica a Terraform que solo gestione ese recurso. Como `summary` no tiene dependencias, se crea solo ese archivo. El state queda con un único recurso registrado.
 
-Edita `main.tf` y cambia:
+```bash
+terraform -chdir=/root/lab state list
+```
 
-```hcl
-resource "random_pet" "app_name" {
-  length    = 3  # Cambiar de 2 a 3
-  separator = "-"
-}
+La lista del state mostrará únicamente `local_file.summary`, confirmando que los otros tres recursos no fueron tocados.
+
+### Paso 5: Aplicar un Recurso con Dependencias (Target con Cadena)
+
+```bash
+terraform -chdir=/root/lab apply -target=local_file.app_config -auto-approve
+```
+
+Aunque solo se especifica `local_file.app_config`, Terraform detecta que depende de `local_file.base_config` y lo incluye automáticamente en el plan. Las dependencias nunca se omiten, incluso con `-target`.
+
+```bash
+terraform -chdir=/root/lab state list
+```
+
+Ahora el state tendrá tres recursos: `base_config`, `app_config` y `summary`. El `audit_log` todavía no existe porque no fue solicitado ni es dependencia de los targets usados.
+
+### Paso 6: Completar la Infraestructura con Apply Total
+
+```bash
+terraform -chdir=/root/lab apply -auto-approve
+```
+
+Un apply sin `-target` reconcilia toda la configuración con el state: crea el único recurso faltante (`audit_log`) y no toca los que ya existen. Este es el uso habitual de Terraform; `-target` es la excepción, no la regla.
+
+```bash
+terraform -chdir=/root/lab state list
+```
+
+Los cuatro recursos deben aparecer en la lista, confirmando que el state está completo.
+
+### Paso 7: Destruir un Recurso Específico con Target
+
+```bash
+terraform -chdir=/root/lab destroy -target=local_file.summary -auto-approve
+```
+
+`destroy -target` elimina únicamente el recurso indicado, siempre que ningún otro recurso en el state dependa de él. `summary` es independiente, por lo que se elimina sin efectos secundarios.
+
+```bash
+terraform -chdir=/root/lab state list
+```
+
+El state debe mostrar los tres recursos restantes: `base_config`, `app_config` y `audit_log`.
+
+### Paso 8: Destruir Todo lo que Queda
+
+```bash
+terraform -chdir=/root/lab destroy -auto-approve
+```
+
+`terraform destroy` sin target elimina todos los recursos registrados en el state, en el orden inverso de dependencias: primero `audit_log`, luego `app_config`, finalmente `base_config`.
+
+### Paso 9: Ejecutar la Validación del Lab
+
+```bash
+cd /root/lab
 ```
 
 ```bash
-# Plan solo para random_pet
-terraform plan -target=random_pet.app_name
-
-# Observa: También afecta a local_file.readme (dependencia)
-
-# Aplicar
-terraform apply -target=random_pet.app_name
+bash validate-lab.sh
 ```
 
-### Paso 7: Experimento 5 - Destroy Selectivo
+El script verifica que Terraform está instalado, que el directorio fue inicializado, que `main.tf` contiene al menos cuatro recursos con la estructura correcta, y que el workflow de targets fue ejecutado.
 
-```bash
-# Destruir solo el README
-terraform destroy -target=local_file.readme
+## Conceptos Clave
 
-# Ver qué queda
-terraform state list
-
-# Limpiar todo
-terraform destroy
-```
-
-### Paso 8: Ejecutar Validación
-
-```bash
-cd ..
-./validate-lab.sh
-```
-
-## 📚 Uso de Targets
-
-### Sintaxis
-
-```bash
-# Plan con target
-terraform plan -target=RESOURCE_TYPE.RESOURCE_NAME
-
-# Apply con target
-terraform apply -target=RESOURCE_TYPE.RESOURCE_NAME
-
-# Destroy con target
-terraform destroy -target=RESOURCE_TYPE.RESOURCE_NAME
-
-# Múltiples targets
-terraform apply \
-  -target=random_pet.app_name \
-  -target=random_id.server
-```
-
-### Casos de Uso
-
-1. **Debugging**: Crear recursos uno por uno para identificar problemas
-2. **Cambios Controlados**: Aplicar cambios incrementales en producción
-3. **Recuperación**: Recrear solo recursos específicos
-4. **Testing**: Probar recursos individuales
-
-## ⚠️ Advertencias
-
-1. **Terraform respeta dependencias**: Si un recurso depende de otro, ambos se incluyen
-2. **No uses targets regularmente**: Solo para casos especiales
-3. **El state puede quedar inconsistente**: Usa con cuidado
-4. **Mejor práctica**: Aplica todo el plan completo cuando sea posible
-
-## ✅ Criterios de Validación
-
-1. ✅ Proyecto creado con múltiples recursos
-2. ✅ Apply con target ejecutado
-3. ✅ Dependencias respetadas automáticamente
-4. ✅ Destroy selectivo probado
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ Usar `-target` para recursos específicos
-- ✅ Terraform respeta dependencias automáticamente
-- ✅ Apply y destroy selectivo
-- ✅ Casos de uso de targets
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Targeting Expert Badge**
+| Concepto | Descripción |
+|---|---|
+| `-target=TIPO.NOMBRE` | Restringe plan/apply/destroy a un recurso específico |
+| Dependencia implícita | Referencia a un atributo de otro recurso; Terraform infiere el orden de creación |
+| Cadena de dependencias | Si A <- B <- C, un target sobre C incluye B y A automáticamente |
+| Apply total | Apply sin `-target` reconcilia toda la configuración; uso habitual recomendado |
+| Destroy selectivo | `destroy -target` elimina un recurso sin afectar al resto del state |
+| State parcial | Resultado de usar targets repetidamente; puede quedar inconsistente si no se completa con apply total |
+| Uso apropiado de targets | Debugging, recuperación puntual o primeros deploys incrementales controlados |
 
 ---
 
-**Anterior:** [Lab 1 - Workflow](../lab1-workflow-completo/)  
-**Siguiente:** [Lab 3 - Destroy y Protección](../lab3-destroy-proteccion/)
+**Anterior:** [Lab 1 - Workflow Completo](../lab1-workflow-completo/)
+**Siguiente:** [Lab 3 - Destroy y Proteccion](../lab3-destroy-proteccion/)

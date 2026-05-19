@@ -1,27 +1,38 @@
-# Lab 4: Calidad de Código y Debugging
+# Lab 4: Calidad de Codigo y Debugging
 
 ![Terraform](https://img.shields.io/badge/Terraform-Quality-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Dominar las herramientas de calidad de código y debugging de Terraform.
+## Objetivo
 
-## ⏱️ Duración
+Dominar las herramientas de calidad integradas en Terraform: `fmt` para formateo automático, `validate` para detección temprana de errores, `TF_LOG` para tracing detallado, y `terraform console` para evaluar expresiones interactivamente. Al finalizar el lab, el código pasará `fmt -check` y `validate` sin errores.
+
+## Duración
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 3 completado
-- Terraform instalado
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Lab 3 completado
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear Archivo con Errores
+## Instrucciones Paso a Paso
+
+### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-mkdir lab3-quality
-cd lab3-quality
+mkdir -p /root/lab
+```
 
-# Crear archivo mal formateado con errores
-cat > main.tf << 'EOF'
+El directorio `/root/lab` aloja la configuración, el state y los logs de este lab.
+
+### Paso 2: Crear un Archivo Deliberadamente Mal Formateado
+
+```bash
+touch /root/lab/main.tf
+```
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform{
 required_version=">= 1.0"
 required_providers{
@@ -30,428 +41,181 @@ source="hashicorp/local"
 version="~> 2.4"
 }}}
 
-# Error: referencia a recurso inexistente
-resource "local_file" "app" {
-name="app.txt"
-content="App config"
-depends_on=[local_file.nonexistent]
+resource "local_file" "app_config" {
+filename="/root/lab/output/app.conf"
+content="host=localhost\nport=8080\n"
 }
 
-# Error: argumento inválido
-resource "local_file" "data" {
-invalid_argument="value"
+resource "local_file" "env_file" {
+filename="/root/lab/output/.env"
+content="APP_ENV=development\nDEBUG=true\n"
 }
 
-# Error: tipo de variable incorrecto
-variable "count" {
-type=number
-default="tres"
-}
-
-output "file"{
-value=local_file.app.filename
-}
-EOF
-```
-
-### Paso 2: Intentar Inicializar
-
-```bash
-# Inicializar (puede funcionar)
-terraform init
-```
-
-### Paso 3: Formatear Código
-
-```bash
-# Formatear automáticamente
-terraform fmt
-
-# Ver el archivo formateado
-cat main.tf
-
-# Ahora está bien formateado pero aún tiene errores lógicos
-```
-
-### Paso 4: Validar y Ver Errores
-
-```bash
-# Validar configuración
-terraform validate
-
-# Output: Múltiples errores
-# - Reference to undeclared resource
-# - Unsupported argument
-# - Invalid default value for variable
-```
-
-### Paso 5: Corregir Errores
-
-```bash
-# Crear archivo correcto
-cat > main.tf << 'EOF'
-terraform {
-  required_version = ">= 1.0"
-  
-  required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.4"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.5"
-    }
-  }
-}
-
-# Recurso base
-resource "random_id" "server" {
-  byte_length = 4
-}
-
-# Archivo de aplicación
-resource "local_file" "app" {
-  filename = "app-${random_id.server.hex}.txt"
-  content  = "App config for server ${random_id.server.hex}"
-}
-
-# Archivo de datos
-resource "local_file" "data" {
-  filename = "data.txt"
-  content  = "Data file"
-}
-
-# Variable correcta
 variable "instance_count" {
-  type    = number
-  default = 3
+type=number
+default=1
 }
 
-output "app_file" {
-  value = local_file.app.filename
-}
-
-output "server_id" {
-  value = random_id.server.hex
+output "config_path"{
+value=local_file.app_config.filename
 }
 EOF
 ```
 
-### Paso 6: Validar Código Corregido
+El archivo tiene formato incorrecto a propósito: sin espacios alrededor de `=`, sin indentación, llaves pegadas al nombre del bloque. Esto permite demostrar el efecto real de `terraform fmt`.
+
+### Paso 3: Intentar Inicializar (Funciona Pese al Mal Formato)
 
 ```bash
-# Formatear
-terraform fmt
-
-# Validar
-terraform validate
-# Output: Success! The configuration is valid.
-
-# Verificar formato
-terraform fmt -check
-# (vacío si todo está bien)
+terraform -chdir=/root/lab init
 ```
 
-### Paso 7: Habilitar Debugging
+`terraform init` descarga providers y puede operar con código mal formateado porque el formateo es cosmético, no sintáctico. Esto confirma que `fmt` es un paso de calidad independiente de la ejecución.
+
+### Paso 4: Verificar el Formato Antes de Corregir
 
 ```bash
-# Nivel DEBUG
+terraform -chdir=/root/lab fmt -check
+```
+
+`fmt -check` devuelve exit code 1 y lista los archivos que no cumplen el estilo canónico, sin modificarlos. Es el modo apropiado para pipelines de CI/CD donde detectar el problema sin corregirlo automáticamente es el objetivo.
+
+### Paso 5: Aplicar el Formateo Automatico
+
+```bash
+terraform -chdir=/root/lab fmt
+```
+
+`terraform fmt` reescribe `main.tf` en su lugar con el estilo correcto: indentación de dos espacios, espacios alrededor de `=`, llaves separadas del nombre del bloque. El comando imprime los nombres de los archivos que modificó.
+
+### Paso 6: Confirmar que el Formato es Correcto
+
+```bash
+terraform -chdir=/root/lab fmt -check
+```
+
+Tras el formateo, `fmt -check` no debe producir salida y debe devolver exit code 0. Si hay salida, significa que algún archivo todavía no cumple el estilo.
+
+### Paso 7: Validar la Configuracion
+
+```bash
+terraform -chdir=/root/lab validate
+```
+
+`terraform validate` analiza la semántica de la configuración: verifica que los tipos de las variables son correctos, que las referencias a otros recursos existen, y que los argumentos de cada recurso son válidos según el schema del provider. Debe mostrar `Success! The configuration is valid.`
+
+### Paso 8: Habilitar Logging de Debug para un Plan
+
+```bash
 export TF_LOG=DEBUG
-export TF_LOG_PATH=terraform.log
-
-# Aplicar con logs
-terraform apply -auto-approve
-
-# Ver logs
-tail -20 terraform.log
 ```
 
-### Paso 8: Diferentes Niveles de Log
+```bash
+export TF_LOG_PATH=/root/lab/terraform-debug.log
+```
+
+Las variables de entorno `TF_LOG` y `TF_LOG_PATH` activan el sistema de logging de Terraform. `DEBUG` produce registros detallados de las llamadas al provider, la evaluación del plan y la actualización del state.
 
 ```bash
-# TRACE - Más detallado
-export TF_LOG=TRACE
-terraform plan
+terraform -chdir=/root/lab plan
+```
 
-# INFO - Información general
-export TF_LOG=INFO
-terraform plan
+El plan se ejecuta normalmente en la terminal, pero también escribe todos los mensajes de debug en el archivo de log. Esto es invaluable para diagnosticar errores de autenticación, problemas de red o comportamientos inesperados del provider.
 
-# ERROR - Solo errores
-export TF_LOG=ERROR
-terraform plan
+### Paso 9: Revisar los Logs Generados
 
-# Deshabilitar logs
+```bash
+wc -l /root/lab/terraform-debug.log
+```
+
+El archivo de log suele tener miles de líneas incluso para configuraciones simples. Ver el conteo de líneas ilustra por qué `TF_LOG=DEBUG` no se usa en ejecuciones normales.
+
+```bash
+grep -i "provider" /root/lab/terraform-debug.log | head -5
+```
+
+Filtrar el log por términos clave (como `provider`, `error`, `request`) permite extraer información relevante sin leer todo el archivo.
+
+### Paso 10: Deshabilitar el Logging
+
+```bash
 unset TF_LOG
+```
+
+```bash
 unset TF_LOG_PATH
 ```
 
-### Paso 9: Usar Terraform Console
+Deshabilitar el logging evita que ejecuciones futuras generen archivos de log innecesarios. En entornos de producción, el logging se habilita puntualmente para diagnosticar un problema y se desactiva al terminar.
+
+### Paso 11: Aplicar la Configuracion
 
 ```bash
-# Abrir consola interactiva
-terraform console
-
-# Dentro de la consola, prueba:
-> random_id.server.hex
-> local_file.app.filename
-> var.instance_count
-> upper("hello terraform")
-> length([1, 2, 3, 4, 5])
-> join(", ", ["Peru", "Chile", "Colombia"])
-> format("Server: %s", random_id.server.hex)
-> timestamp()
-> formatdate("YYYY-MM-DD", timestamp())
-> exit
+terraform -chdir=/root/lab apply -auto-approve
 ```
 
-### Paso 10: Crear Script de Validación
+Aplica la configuración validada y formateada, creando los dos archivos de salida. El apply es más confiable cuando viene precedido de `fmt` y `validate`.
+
+### Paso 12: Explorar Expresiones con Terraform Console
 
 ```bash
-# Crear script para CI/CD
-cat > validate.sh << 'EOF'
-#!/bin/bash
-
-echo "🔍 Verificando formato..."
-if ! terraform fmt -check -recursive; then
-  echo "❌ Código no está formateado"
-  echo "Ejecuta: terraform fmt -recursive"
-  exit 1
-fi
-echo "✅ Formato correcto"
-
-echo "🔍 Validando configuración..."
-if ! terraform validate; then
-  echo "❌ Configuración inválida"
-  exit 1
-fi
-echo "✅ Configuración válida"
-
-echo "🔍 Generando plan..."
-terraform plan -out=tfplan
-echo "✅ Plan generado"
-
-echo "✅ Todas las verificaciones pasaron"
+terraform -chdir=/root/lab console <<'EOF'
+local_file.app_config.filename
 EOF
-
-chmod +x validate.sh
-
-# Ejecutar script
-./validate.sh
 ```
 
-### Paso 11: Limpiar
+`terraform console` evalúa expresiones HCL contra el state actual sin modificar nada. Pasarle un heredoc ejecuta las expresiones en modo no interactivo, compatible con scripts.
 
 ```bash
-terraform destroy -auto-approve
+terraform -chdir=/root/lab console <<'EOF'
+upper("terraform")
+EOF
 ```
 
-### Paso 12: Ejecutar Validación
+Las funciones built-in de Terraform también son evaluables en console. `upper`, `lower`, `format`, `join`, `length` y muchas más permiten probar transformaciones de datos antes de usarlas en recursos.
 
 ```bash
-cd ..
-./validate-lab.sh
+terraform -chdir=/root/lab console <<'EOF'
+var.instance_count + 10
+EOF
 ```
 
-## 📚 Comandos de Calidad
+Las variables declaradas en la configuración también son accesibles en console con su valor por defecto. Esto permite verificar expresiones que combinan variables y funciones.
 
-### Formateo
+### Paso 13: Limpiar los Recursos
 
 ```bash
-# Formatear directorio actual
-terraform fmt
-
-# Formatear recursivamente
-terraform fmt -recursive
-
-# Solo verificar (no modificar)
-terraform fmt -check
-
-# Mostrar diferencias
-terraform fmt -diff
+terraform -chdir=/root/lab destroy -auto-approve
 ```
 
-### Validación
+Elimina los archivos creados por el apply y deja el state vacío. Al finalizar un lab siempre se debe hacer destroy para no acumular recursos.
+
+### Paso 14: Ejecutar la Validacion del Lab
 
 ```bash
-# Validar configuración
-terraform validate
-
-# Validar con output JSON
-terraform validate -json
+cd /root/lab
 ```
-
-### Debugging
 
 ```bash
-# Niveles de log
-export TF_LOG=TRACE   # Más detallado
-export TF_LOG=DEBUG   # Debug detallado
-export TF_LOG=INFO    # Información general
-export TF_LOG=WARN    # Solo warnings
-export TF_LOG=ERROR   # Solo errores
-
-# Guardar logs en archivo
-export TF_LOG_PATH=terraform.log
-
-# Deshabilitar
-unset TF_LOG
-unset TF_LOG_PATH
+bash validate-lab.sh
 ```
 
-### Console Interactivo
+El script verifica que Terraform está instalado, el directorio fue inicializado, `main.tf` existe y pasa `fmt -check` y `validate`, que se generó el archivo de log de debug, y que el estado final es coherente.
 
-```bash
-# Abrir console
-terraform console
+## Conceptos Clave
 
-# Probar expresiones
-> var.instance_count
-> local.server_name
-> upper("hello")
-> length([1, 2, 3])
-```
-
-## 💡 Integración CI/CD
-
-### GitHub Actions
-
-```yaml
-name: Terraform Quality
-
-on: [push, pull_request]
-
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-      
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
-      
-      - name: Terraform Init
-        run: terraform init
-      
-      - name: Terraform Validate
-        run: terraform validate
-      
-      - name: Terraform Plan
-        run: terraform plan
-```
-
-### Pre-commit Hook
-
-```bash
-# .git/hooks/pre-commit
-#!/bin/bash
-
-echo "🔍 Running Terraform checks..."
-
-# Format check
-if ! terraform fmt -check -recursive; then
-  echo "❌ Code is not formatted"
-  echo "Run: terraform fmt -recursive"
-  exit 1
-fi
-
-# Validate
-if ! terraform validate; then
-  echo "❌ Configuration is invalid"
-  exit 1
-fi
-
-echo "✅ All checks passed"
-```
-
-### Makefile
-
-```makefile
-.PHONY: fmt validate plan apply destroy
-
-fmt:
-	terraform fmt -recursive
-
-validate:
-	terraform validate
-
-plan:
-	terraform plan
-
-apply:
-	terraform apply -auto-approve
-
-destroy:
-	terraform destroy -auto-approve
-
-check: fmt validate
-	@echo "✅ Quality checks passed"
-```
-
-## 🔧 Herramientas Complementarias
-
-### TFLint
-
-```bash
-# Instalar
-brew install tflint
-
-# Ejecutar
-tflint
-
-# Con configuración
-tflint --config=.tflint.hcl
-```
-
-### Checkov (Security Scanner)
-
-```bash
-# Instalar
-pip install checkov
-
-# Escanear
-checkov -d .
-
-# Solo errores críticos
-checkov -d . --compact
-```
-
-### terraform-docs
-
-```bash
-# Instalar
-brew install terraform-docs
-
-# Generar documentación
-terraform-docs markdown . > README.md
-```
-
-## ✅ Criterios de Validación
-
-1. ✅ Código mal formateado corregido con `fmt`
-2. ✅ Errores de validación identificados y corregidos
-3. ✅ Debugging con logs habilitado
-4. ✅ Terraform console explorado
-5. ✅ Script de validación creado
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ Formateo automático con `terraform fmt`
-- ✅ Validación con `terraform validate`
-- ✅ Niveles de logging para debugging
-- ✅ Terraform console para testing
-- ✅ Integración con CI/CD
-- ✅ Pre-commit hooks
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Quality Expert Badge**
+| Concepto | Descripcion |
+|---|---|
+| `terraform fmt` | Reescribe archivos `.tf` con el estilo canónico de HashiCorp |
+| `terraform fmt -check` | Verifica formato sin modificar; exit code 1 si hay diferencias (ideal para CI) |
+| `terraform validate` | Comprueba semántica: tipos, referencias y argumentos; no requiere credenciales |
+| `TF_LOG=DEBUG` | Activa logging detallado; niveles: TRACE, DEBUG, INFO, WARN, ERROR |
+| `TF_LOG_PATH` | Redirige los logs a un archivo en lugar de stderr |
+| `terraform console` | REPL que evalúa expresiones HCL contra el state actual; no modifica nada |
+| Orden recomendado | `fmt` → `validate` → `plan` → `apply`; detectar errores lo antes posible |
+| Logging en CI/CD | Usar `TF_LOG=ERROR` por defecto; escalar a DEBUG solo en fallo |
 
 ---
 
-**Anterior:** [Lab 3 - Protección](../lab3-destroy-proteccion/)  
-**Siguiente:** [Módulo 4 - Configuration](../../04-terraform-configuration/)
+**Anterior:** [Lab 3 - Destroy y Proteccion](../lab3-destroy-proteccion/)
+**Siguiente:** [Modulo 4 - Terraform Configuration](../../04-terraform-configuration/)

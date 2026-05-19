@@ -2,61 +2,51 @@
 
 ![Terraform](https://img.shields.io/badge/HCP_Terraform-Setup-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Configurar HCP Terraform (antes Terraform Cloud), crear un workspace remoto y conectar tu proyecto local para ejecutar runs en la nube.
+## Objetivo
 
-## ⏱️ Duración
+Aprender la estructura de configuracion de HCP Terraform (antes Terraform Cloud): el bloque `cloud {}`, credenciales, y el patron de configuracion de workspaces remotos. Las partes que requieren conectividad real a HCP se usan con un backend local para que puedas ejecutar Terraform de forma practicas.
+
+## Duracion
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Módulo 07 completado
-- Cuenta en [app.terraform.io](https://app.terraform.io) (gratuita)
+## Prerrequisitos
+
+- Modulo 07 completado
 - Terraform instalado
+- (Opcional) Cuenta gratuita en [app.terraform.io](https://app.terraform.io) para ver la UI
 
-## 🚀 Instrucciones Paso a Paso
+## Instrucciones Paso a Paso
 
-### Paso 1: Crear Cuenta en HCP Terraform
-
-1. Ve a [https://app.terraform.io/signup/account](https://app.terraform.io/signup/account)
-2. Crea una cuenta gratuita (o usa tu cuenta existente)
-3. Crea una organización: `peru-hug-<tu-nombre>`
-4. Anota el nombre de tu organización
-
-### Paso 2: Generar un Token de API
+### Paso 1: Crear el directorio de trabajo
 
 ```bash
-# Opción A: Desde la CLI (abre el browser automáticamente)
-terraform login
-
-# Opción B: Desde la UI
-# 1. HCP Terraform → User Settings → Tokens
-# 2. Create an API token
-# 3. Copia el token
-
-# Verificar que el token se guardó
-cat ~/.terraform.d/credentials.tfrc.json
+mkdir -p /root/lab && cd /root/lab
 ```
 
-### Paso 3: Crear el Proyecto
+El directorio `/root/lab` es el espacio de trabajo para este laboratorio.
+
+### Paso 2: Crear las versiones y configuracion del provider
 
 ```bash
-mkdir lab1-hcp-setup
-cd lab1-hcp-setup
+touch versions.tf
 ```
 
-Crea `versions.tf`:
-
-```hcl
+```bash
+cat > versions.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
 
-  cloud {
-    organization = "peru-hug-TU-NOMBRE"   # ← reemplaza con tu org
-
-    workspaces {
-      name = "lab-hcp-setup"
-    }
-  }
+  # CONCEPTO: bloque cloud {} conecta con HCP Terraform.
+  # En un entorno real, reemplaza "TU-ORG" con tu organizacion
+  # y ejecuta: terraform login
+  #
+  # cloud {
+  #   organization = "peru-hug-TU-ORG"
+  #   workspaces {
+  #     name = "lab-hcp-setup"
+  #   }
+  # }
 
   required_providers {
     local = {
@@ -65,148 +55,156 @@ terraform {
     }
   }
 }
+EOF
 ```
 
-Crea `main.tf`:
+El bloque `cloud {}` es la forma moderna de conectar Terraform con HCP Terraform. Reemplaza al antiguo `backend "remote" {}`. Esta version usa un comentario para ilustrar el patron sin requerir conectividad a HCP.
 
-```hcl
+### Paso 3: Crear main.tf con los recursos
+
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 variable "entorno" {
-  type    = string
-  default = "dev"
+  description = "Nombre del entorno de despliegue"
+  type        = string
+  default     = "dev"
 }
 
 resource "local_file" "info" {
-  filename = "./info-hcp.txt"
+  filename = "/root/lab/info-hcp.txt"
   content  = <<-EOT
-    # Ejecutado desde HCP Terraform
-    entorno = ${var.entorno}
+    # Configuracion de HCP Terraform
+    entorno    = ${var.entorno}
+    generado   = local backend (simulando HCP)
   EOT
 }
 
 output "mensaje" {
-  value = "Run ejecutado en HCP Terraform - entorno: ${var.entorno}"
+  value = "Configuracion aplicada - entorno: ${var.entorno}"
+}
+EOF
+```
+
+`local_file` crea un archivo en el sistema local. En HCP Terraform real, este recurso se ejecutaria en un runner remoto administrado por HashiCorp.
+
+### Paso 4: Entender el archivo de credenciales de HCP Terraform
+
+```bash
+touch hcp-setup.md
+```
+
+```bash
+cat > hcp-setup.md <<'EOF'
+# HCP Terraform Setup - Notas de Configuracion
+
+## Autenticacion con HCP Terraform
+
+### Opcion A: terraform login (recomendado)
+```
+terraform login
+```
+Abre el browser, genera un token y lo guarda en:
+~/.terraform.d/credentials.tfrc.json
+
+### Opcion B: Variable de entorno
+```
+export TF_TOKEN_app_terraform_io="tu-token-aqui"
+```
+
+### Opcion C: credentials.tfrc.json manual
+```json
+{
+  "credentials": {
+    "app.terraform.io": {
+      "token": "tu-token-aqui"
+    }
+  }
 }
 ```
 
-### Paso 4: Inicializar y Conectar el Workspace
+## Bloque cloud {} vs backend "remote" {}
+
+| Caracteristica        | cloud {}              | backend "remote" {}   |
+|-----------------------|-----------------------|-----------------------|
+| Introducido en        | Terraform 1.1         | Terraform 0.12        |
+| Configuracion         | Mas simple            | Mas verboso           |
+| Workspaces multiples  | Con tags              | Con prefix            |
+| Estado actual         | Recomendado           | Legacy                |
+
+## Modos de ejecucion en HCP Terraform
+
+- Remote:  plan y apply corren en HCP Terraform (runner administrado)
+- Local:   plan y apply corren en tu maquina, state se guarda en HCP
+- Agent:   plan y apply corren en un agente tuyo (on-prem / VPC privada)
+
+## Variables en HCP Terraform
+
+- Terraform variables: visibles en el codigo como var.nombre
+- Environment variables: disponibles en el proceso de terraform
+- Sensitive: enmascaradas en logs y en la UI
+
+## Historial y auditoria
+
+- Runs: cada terraform plan/apply queda registrado con autor y commit
+- State versions: cada apply genera una nueva version del state
+- Audit trail: log de quienes ejecutaron que (plan Plus)
+EOF
+```
+
+Este archivo documenta los patrones clave de HCP Terraform para referencia durante el lab y en el examen.
+
+### Paso 5: Inicializar Terraform con backend local
 
 ```bash
-# terraform init detecta el bloque cloud y conecta con HCP Terraform
 terraform init
-
-# Verás:
-# Terraform Cloud has been successfully initialized!
-# You may now begin working with Terraform Cloud.
-# ...workspace: lab-hcp-setup
 ```
 
-### Paso 5: Ejecutar el Primer Run Remoto
+`terraform init` descarga el provider `hashicorp/local` y prepara el directorio `.terraform`. Con el bloque `cloud {}` activo (y credenciales configuradas), este comando conectaria con HCP Terraform en cambio.
+
+### Paso 6: Ver el plan y aplicar
 
 ```bash
-# Plan remoto — se ejecuta en HCP Terraform
 terraform plan
-
-# Observa en la URL que imprime: puedes ver el plan en la UI
-# https://app.terraform.io/app/<org>/workspaces/lab-hcp-setup/runs/<id>
-
-# Apply remoto
-terraform apply
 ```
-
-### Paso 6: Explorar la UI de HCP Terraform
-
-Ve a [https://app.terraform.io](https://app.terraform.io) y explora:
-
-```
-1. Organization → Workspaces → lab-hcp-setup
-   - Runs: historial de plans y applies
-   - State Versions: histórico del state
-   - Variables: variables de entorno y Terraform
-
-2. Workspace Settings
-   - General: modo de ejecución (Remote / Local / Agent)
-   - Notifications: alertas en Slack/email
-   - Team Access: permisos por equipo
-```
-
-### Paso 7: Agregar Variables en HCP Terraform
 
 ```bash
-# En la UI:
-# Workspace → Variables → Add variable
-
-# Variable Terraform (para el código):
-# Key: entorno
-# Value: produccion
-# Sensitive: No
-
-# Variable de Entorno (para el runner):
-# Key: TF_LOG
-# Value: INFO
-# Sensitive: No
-
-# Luego ejecutar apply para ver el efecto
-terraform apply
+terraform apply -auto-approve
 ```
 
-### Paso 8: Ejecutar Validación Local
+`terraform apply` crea el archivo `info-hcp.txt` con el backend local. En HCP Terraform real, el runner remoto ejecutaria este mismo codigo y guardaria el state en la nube.
+
+### Paso 7: Verificar el archivo generado
 
 ```bash
-./validate-lab.sh
+cat /root/lab/info-hcp.txt
 ```
 
-## ✅ Criterios de Validación
+El archivo confirma que Terraform creo el recurso correctamente. En HCP Terraform, el state queda en la UI bajo "State Versions".
 
-1. ✅ Cuenta en HCP Terraform creada
-2. ✅ `terraform login` ejecutado con éxito
-3. ✅ Workspace `lab-hcp-setup` creado
-4. ✅ `terraform init` conecta con el workspace remoto
-5. ✅ Al menos un run completado en HCP Terraform
-
-## 🔧 Troubleshooting
-
-### Error: "No valid credential sources found"
+### Paso 8: Ejecutar validacion
 
 ```bash
-# El token no está configurado
-terraform login
-# O manualmente:
-# nano ~/.terraform.d/credentials.tfrc.json
+cd /root/lab && bash validate-lab.sh
 ```
 
-### Error: "Organization not found"
+## Conceptos Aprendidos
 
-```bash
-# Verifica el nombre exacto de la organización
-# En HCP Terraform: Organization Settings → General → Organization Name
-```
+- Bloque `cloud {}` vs `backend "remote" {}`: cuando y por que usar cada uno
+- `terraform login` y el archivo `credentials.tfrc.json`
+- Modos de ejecucion: Remote, Local, Agent
+- Variables en HCP Terraform: Terraform vars y Environment vars
+- Historial de runs y versiones de state
 
-### Error: "Workspace already exists"
-
-```bash
-# El workspace ya fue creado en una sesión anterior
-# Solo ejecuta terraform init, el workspace ya está listo
-```
-
-## 📚 Recursos
+## Recursos
 
 - [HCP Terraform Getting Started](https://developer.hashicorp.com/terraform/tutorials/cloud-get-started)
 - [Terraform Cloud Block](https://developer.hashicorp.com/terraform/language/settings/terraform-cloud)
 
-## 🎓 Conceptos Aprendidos
-
-- ✅ Diferencia entre Terraform CLI y HCP Terraform
-- ✅ Bloque `cloud {}` vs bloque `backend "remote" {}`
-- ✅ `terraform login` y gestión de tokens
-- ✅ Runs remotos: plan y apply ejecutados en HCP
-- ✅ Variables en HCP Terraform (Terraform vars y env vars)
-- ✅ Historial de runs y versiones de state
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **HCP Terraform Setup Badge**
-
 ---
 
-**Anterior:** [Módulo 07 - Maintain Infrastructure](../../07-maintain-infrastructure/)
+**Anterior:** [Modulo 07 - Maintain Infrastructure](../../07-maintain-infrastructure/)
 **Siguiente:** [Lab 2 - VCS Workflows](../lab2-vcs-workflows/)

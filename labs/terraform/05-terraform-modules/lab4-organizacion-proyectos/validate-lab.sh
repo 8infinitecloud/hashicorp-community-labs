@@ -2,67 +2,77 @@
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASSED=0; FAILED=0
 
+PROJECT_DIR="${1:-/root/lab}"
+
 validate() {
     echo -n "  $1... "
     if eval "$2" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASS${NC}"; ((PASSED++))
+        echo -e "${GREEN}PASS${NC}"; ((PASSED++))
     else
-        echo -e "${RED}❌ FAIL${NC} — $3"; ((FAILED++))
+        echo -e "${RED}FAIL${NC} — $3"; ((FAILED++))
     fi
 }
 
-echo -e "${YELLOW}🧪 Validando Lab 4: Organización de Proyectos${NC}"
+echo -e "${YELLOW}Validando Lab 4: Organizacion de Proyectos${NC}"
 echo "================================================"
 
-validate "Módulo modules/red/ existe" \
-    "[ -d 'modules/red' ]" \
-    "Crea el módulo de red en modules/red/"
+validate "Terraform instalado" \
+    "terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | grep -q ." \
+    "Instala Terraform >= 1.0"
 
-validate "Módulo modules/aplicacion/ existe" \
-    "[ -d 'modules/aplicacion' ]" \
-    "Crea el módulo de aplicación en modules/aplicacion/"
+validate "Modulo modules/red/ existe" \
+    "[ -d '$PROJECT_DIR/modules/red' ]" \
+    "Crea el modulo de red en modules/red/"
 
-validate "Entorno dev/ existe" \
-    "[ -d 'entornos/dev' ] || [ -d 'dev' ]" \
-    "Crea el directorio para el entorno de desarrollo"
+validate "Modulo modules/aplicacion/ existe" \
+    "[ -d '$PROJECT_DIR/modules/aplicacion' ]" \
+    "Crea el modulo de aplicacion en modules/aplicacion/"
 
-validate "Entorno prod/ existe" \
-    "[ -d 'entornos/prod' ] || [ -d 'prod' ]" \
-    "Crea el directorio para el entorno de producción"
+validate "Modulo red tiene main.tf" \
+    "[ -f '$PROJECT_DIR/modules/red/main.tf' ]" \
+    "Crea modules/red/main.tf"
 
-validate "Dev tiene main.tf" \
-    "find . -path '*/dev/main.tf' | grep -q ." \
-    "El entorno dev debe tener su propio main.tf"
+validate "Modulo aplicacion tiene main.tf" \
+    "[ -f '$PROJECT_DIR/modules/aplicacion/main.tf' ]" \
+    "Crea modules/aplicacion/main.tf"
 
-validate "Dev inicializado (.terraform/)" \
-    "find . -path '*/dev/.terraform' -type d | grep -q ." \
-    "Ejecuta: cd entornos/dev && terraform init"
+validate "Entorno dev/ existe con main.tf" \
+    "[ -f '$PROJECT_DIR/entornos/dev/main.tf' ]" \
+    "Crea entornos/dev/main.tf con la configuracion del entorno de desarrollo"
+
+validate "Entorno prod/ existe con main.tf" \
+    "[ -f '$PROJECT_DIR/entornos/prod/main.tf' ]" \
+    "Crea entornos/prod/main.tf con la configuracion del entorno de produccion"
+
+validate "Dev inicializado" \
+    "test -d '$PROJECT_DIR/entornos/dev/.terraform' || test -f '$PROJECT_DIR/entornos/dev/terraform.tfstate'" \
+    "Ejecuta: terraform -chdir=entornos/dev init"
 
 validate "Dev aplicado (terraform.tfstate)" \
-    "find . -path '*/dev/terraform.tfstate' | grep -q ." \
-    "Ejecuta: cd entornos/dev && terraform apply -auto-approve"
+    "[ -f '$PROJECT_DIR/entornos/dev/terraform.tfstate' ]" \
+    "Ejecuta: terraform -chdir=entornos/dev apply -auto-approve"
 
-validate "Prod tiene main.tf" \
-    "find . -path '*/prod/main.tf' | grep -q ." \
-    "El entorno prod debe tener su propio main.tf"
+validate "Prod inicializado" \
+    "test -d '$PROJECT_DIR/entornos/prod/.terraform' || test -f '$PROJECT_DIR/entornos/prod/terraform.tfstate'" \
+    "Ejecuta: terraform -chdir=entornos/prod init"
 
-validate "Prod inicializado (.terraform/)" \
-    "find . -path '*/prod/.terraform' -type d | grep -q ." \
-    "Ejecuta: cd entornos/prod && terraform init"
+validate "Prod aplicado (terraform.tfstate)" \
+    "[ -f '$PROJECT_DIR/entornos/prod/terraform.tfstate' ]" \
+    "Ejecuta: terraform -chdir=entornos/prod apply -auto-approve"
 
-validate "Cada entorno tiene variables distintas" \
-    "find . -path '*/dev/terraform.tfvars' | grep -q . || find . -path '*/dev/*.auto.tfvars' | grep -q ." \
-    "Usa terraform.tfvars o variables distintas por entorno"
+validate "Archivos de red generados para ambos entornos" \
+    "find '$PROJECT_DIR/modules/red/output' -name 'vpc-dev*' | grep -q . && find '$PROJECT_DIR/modules/red/output' -name 'vpc-prod*' | grep -q ." \
+    "Aplica ambos entornos para generar los archivos de red"
 
 echo ""
 echo "================================================"
 echo -e "Resultados: ${GREEN}${PASSED} PASS${NC} | ${RED}${FAILED} FAIL${NC}"
 
-if [ $FAILED -eq 0 ] && [ $PASSED -ge 8 ]; then
-    echo -e "${GREEN}🎉 ¡LABORATORIO COMPLETADO! Badge: Terraform Project Organization${NC}"
-    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "../../../.badge-tf-m5-lab4"
+if [ $FAILED -eq 0 ]; then
+    echo -e "${GREEN}LABORATORIO COMPLETADO! Badge: Terraform Project Organization${NC}"
+    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "/root/.badge-tf-m5-lab4"
     exit 0
 else
-    echo -e "${RED}❌ LABORATORIO INCOMPLETO — revisa los puntos fallidos arriba.${NC}"
+    echo -e "${RED}LABORATORIO INCOMPLETO — revisa los puntos fallidos arriba.${NC}"
     exit 1
 fi

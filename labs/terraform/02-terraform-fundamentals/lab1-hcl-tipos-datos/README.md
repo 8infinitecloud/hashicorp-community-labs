@@ -1,43 +1,62 @@
-# Lab 1: Explorar HCL y Tipos de Datos
+# Lab 1: HCL y Tipos de Datos
 
-![Terraform](https://img.shields.io/badge/Terraform-HCL%20Syntax-7B42BC?style=flat&logo=terraform)
+## Objetivo
 
-## 🎯 Objetivo
-Familiarizarte con la sintaxis HCL (HashiCorp Configuration Language) y los diferentes tipos de datos en Terraform.
+Familiarizarte con la sintaxis HCL (HashiCorp Configuration Language) explorando todos los tipos de datos de Terraform: primitivos, colecciones y estructurales, junto con las funciones built-in mas usadas.
 
-## ⏱️ Duración
+## Duracion
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Módulo 1 completado
-- Terraform instalado
-- Editor de texto
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Modulo 1 completado
+- Terraform instalado (verificar con `terraform version`)
 
-### Paso 1: Crear el Directorio del Proyecto
+## Instrucciones
+
+### Paso 1: Crear el directorio del proyecto
 
 ```bash
-mkdir lab2-hcl
-cd lab2-hcl
+mkdir lab1-hcl
 ```
 
-### Paso 2: Crear el Archivo main.tf
+Crea el directorio de trabajo aislado para este lab.
 
-Crea un archivo `main.tf` con el siguiente contenido:
+```bash
+cd lab1-hcl
+```
 
-```hcl
-# main.tf - Explorando tipos de datos en HCL
+Entra al directorio para que todos los comandos operen dentro de el.
 
-# Variables de diferentes tipos
+### Paso 2: Crear el archivo main.tf
+
+```bash
+touch main.tf
+```
+
+Crea el archivo vacio antes de escribir el contenido.
+
+```bash
+cat > main.tf <<'EOF'
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
+  }
+}
+
+# --- Tipos primitivos ---
 variable "app_name" {
-  description = "Nombre de la aplicación"
+  description = "Nombre de la aplicacion"
   type        = string
   default     = "PeruApp"
 }
 
 variable "instance_count" {
-  description = "Número de instancias"
+  description = "Numero de instancias"
   type        = number
   default     = 3
 }
@@ -48,6 +67,7 @@ variable "enable_monitoring" {
   default     = true
 }
 
+# --- Tipos de coleccion ---
 variable "availability_zones" {
   description = "Zonas de disponibilidad"
   type        = list(string)
@@ -64,8 +84,9 @@ variable "tags" {
   }
 }
 
+# --- Tipo estructural ---
 variable "server_config" {
-  description = "Configuración del servidor"
+  description = "Configuracion del servidor"
   type = object({
     name = string
     size = string
@@ -78,37 +99,53 @@ variable "server_config" {
   }
 }
 
-# Locals para cálculos
+# --- Locals: valores calculados ---
 locals {
-  # Concatenación de strings
-  full_app_name = "${var.app_name}-${var.tags["Environment"]}"
-  
-  # Condicional
-  instance_type = var.tags["Environment"] == "produccion" ? "t3.large" : "t2.micro"
-  
-  # Funciones de strings
+  full_app_name  = "${var.app_name}-${var.tags["Environment"]}"
+  instance_type  = var.tags["Environment"] == "produccion" ? "t3.large" : "t2.micro"
   app_name_upper = upper(var.app_name)
   app_name_lower = lower(var.app_name)
-  
-  # Funciones de listas
-  az_count = length(var.availability_zones)
-  first_az = var.availability_zones[0]
-  
-  # Funciones de mapas
-  all_tags = merge(
-    var.tags,
-    {
-      ManagedBy = "Terraform"
-      CreatedAt = timestamp()
-    }
+  az_count       = length(var.availability_zones)
+  first_az       = var.availability_zones[0]
+  server_url     = format("http://%s:%d", var.server_config.name, var.server_config.port)
+  deployment_size = (
+    var.instance_count > 10 ? "grande" :
+    var.instance_count > 5 ? "mediano" :
+    "pequeno"
   )
-  
-  # Formateo
-  server_url = format("http://%s:%d", var.server_config.name, var.server_config.port)
 }
 
-# Outputs para ver los resultados
-output "1_variables_basicas" {
+# --- Archivo de resumen generado por Terraform ---
+resource "local_file" "summary" {
+  filename = "resumen.txt"
+  content  = <<-EOT
+    Resumen de tipos de datos HCL
+    ==============================
+
+    Primitivos:
+      app_name         = ${var.app_name}
+      instance_count   = ${var.instance_count}
+      enable_monitoring = ${var.enable_monitoring}
+
+    Colecciones:
+      availability_zones = ${join(", ", var.availability_zones)}
+      tags[Environment]  = ${var.tags["Environment"]}
+
+    Objeto:
+      server_url = ${local.server_url}
+
+    Locals calculados:
+      full_app_name   = ${local.full_app_name}
+      instance_type   = ${local.instance_type}
+      app_name_upper  = ${local.app_name_upper}
+      az_count        = ${local.az_count}
+      first_az        = ${local.first_az}
+      deployment_size = ${local.deployment_size}
+  EOT
+}
+
+# --- Outputs ---
+output "primitivos" {
   value = {
     app_name          = var.app_name
     instance_count    = var.instance_count
@@ -116,7 +153,7 @@ output "1_variables_basicas" {
   }
 }
 
-output "2_colecciones" {
+output "colecciones" {
   value = {
     availability_zones = var.availability_zones
     tags               = var.tags
@@ -124,272 +161,134 @@ output "2_colecciones" {
   }
 }
 
-output "3_locals_calculados" {
+output "locals_calculados" {
   value = {
-    full_app_name  = local.full_app_name
-    instance_type  = local.instance_type
-    app_name_upper = local.app_name_upper
-    app_name_lower = local.app_name_lower
+    full_app_name   = local.full_app_name
+    instance_type   = local.instance_type
+    app_name_upper  = local.app_name_upper
+    az_count        = local.az_count
+    first_az        = local.first_az
+    server_url      = local.server_url
+    deployment_size = local.deployment_size
   }
 }
 
-output "4_funciones" {
+output "condicional" {
   value = {
-    az_count   = local.az_count
-    first_az   = local.first_az
-    all_tags   = local.all_tags
-    server_url = local.server_url
-  }
-}
-
-output "5_expresiones" {
-  value = {
-    # Ternario
-    message = var.enable_monitoring ? "Monitoreo habilitado ✅" : "Monitoreo deshabilitado ❌"
-    
-    # Interpolación
-    greeting = "Bienvenido a ${var.app_name}!"
-    
-    # Join y split
+    monitoreo = var.enable_monitoring ? "Monitoreo habilitado" : "Monitoreo deshabilitado"
     az_string = join(", ", var.availability_zones)
-    
-    # Condicional complejo
-    deployment_size = (
-      var.instance_count > 10 ? "grande" :
-      var.instance_count > 5  ? "mediano" :
-      "pequeño"
-    )
   }
-}
-```
-
-### Paso 3: Inicializar y Aplicar
-
-```bash
-# Inicializar
-terraform init
-
-# Ver el plan
-terraform plan
-
-# Aplicar
-terraform apply
-```
-
-### Paso 4: Explorar los Outputs
-
-Observa los diferentes tipos de datos y cómo se procesan:
-
-```bash
-# Ver todos los outputs
-terraform output
-
-# Ver un output específico
-terraform output 1_variables_basicas
-terraform output 3_locals_calculados
-
-# Ver en formato JSON
-terraform output -json | jq .
-```
-
-### Paso 5: Experimentar con Variables
-
-#### Experimento 1: Cambiar a Producción
-
-```bash
-# Crear archivo terraform.tfvars
-cat > terraform.tfvars <<EOF
-tags = {
-  Environment = "produccion"
-  Country     = "Peru"
-  Team        = "DevOps"
 }
 EOF
-
-# Aplicar y observar cómo cambia instance_type
-terraform apply
 ```
 
-#### Experimento 2: Cambiar Instance Count
+Define variables de todos los tipos de Terraform: `string`, `number`, `bool`, `list(string)`, `map(string)` y `object`. Los `locals` demuestran funciones built-in como `upper`, `lower`, `length`, `format` y `join`, junto con condicionales ternarios simples y anidados.
+
+### Paso 3: Inicializar Terraform
 
 ```bash
-# Aplicar con variable inline
-terraform apply -var="instance_count=15"
-
-# Observa cómo deployment_size cambia a "grande"
-terraform output 5_expresiones
+terraform init
 ```
 
-#### Experimento 3: Agregar Más Zonas
+Descarga el provider `hashicorp/local` necesario para crear el archivo de resumen. Sin este paso no es posible ejecutar plan ni apply.
 
-Modifica `main.tf` y agrega más zonas:
-
-```hcl
-variable "availability_zones" {
-  default = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d"]
-}
-```
-
-Aplica y ve cómo cambia `az_count`.
-
-### Paso 6: Usar Terraform Console
+### Paso 4: Ver el plan
 
 ```bash
-# Abrir consola interactiva
+terraform plan
+```
+
+Muestra los valores calculados de cada local y los outputs antes de crear nada. Es la mejor forma de verificar que la logica de los condicionales y funciones es correcta.
+
+### Paso 5: Aplicar la configuracion
+
+```bash
+terraform apply -auto-approve
+```
+
+Crea el archivo `resumen.txt` y registra todos los recursos en el state. Los outputs se imprimen al final, mostrando el resultado de todas las expresiones HCL.
+
+### Paso 6: Inspeccionar los outputs
+
+```bash
+terraform output
+```
+
+Lista todos los outputs con sus valores calculados. Esto confirma que cada tipo de dato fue procesado correctamente por Terraform.
+
+```bash
+terraform output locals_calculados
+```
+
+Muestra unicamente el output con los valores derivados de `locals`, lo que permite verificar los resultados de las funciones y el condicional ternario anidado.
+
+### Paso 7: Usar Terraform Console
+
+```bash
 terraform console
-
-# Dentro de la consola, prueba:
-> var.app_name
-> var.instance_count
-> var.tags["Environment"]
-> upper("hello terraform")
-> length(var.availability_zones)
-> join(" | ", var.availability_zones)
-> format("Server: %s on port %d", var.server_config.name, var.server_config.port)
-
-# Salir
-> exit
 ```
 
-### Paso 7: Ejecutar Validación
+Abre la consola interactiva de Terraform donde puedes evaluar expresiones HCL en tiempo real usando el estado actual. Prueba dentro de la consola las expresiones del siguiente bloque y luego escribe `exit`.
 
 ```bash
-# Volver al directorio del lab
-cd ..
-
-# Ejecutar validación
-./validate-lab.sh
+var.app_name
+upper(var.app_name)
+length(var.availability_zones)
+var.tags["Environment"]
+format("Server: %s:%d", var.server_config.name, var.server_config.port)
+join(" | ", var.availability_zones)
+exit
 ```
 
-## 📚 Tipos de Datos en Terraform
+La consola evalua cada expresion contra el state actual, lo que permite experimentar con funciones sin modificar archivos ni ejecutar apply.
 
-### Tipos Primitivos
+### Paso 8: Probar con variables diferentes
 
-| Tipo | Descripción | Ejemplo |
-|------|-------------|---------|
-| `string` | Cadena de texto | `"PeruApp"` |
-| `number` | Número entero o decimal | `42`, `3.14` |
-| `bool` | Booleano | `true`, `false` |
-
-### Tipos de Colección
-
-| Tipo | Descripción | Ejemplo |
-|------|-------------|---------|
-| `list(type)` | Lista ordenada | `["a", "b", "c"]` |
-| `set(type)` | Conjunto sin duplicados | `["a", "b"]` |
-| `map(type)` | Mapa clave-valor | `{key = "value"}` |
-
-### Tipos Estructurales
-
-| Tipo | Descripción | Ejemplo |
-|------|-------------|---------|
-| `object({...})` | Objeto con atributos específicos | `{name = "web", port = 80}` |
-| `tuple([...])` | Tupla con tipos específicos | `["string", 123, true]` |
-
-## 🔧 Funciones Útiles de Terraform
-
-### Funciones de Strings
-
-```hcl
-upper("hello")           # "HELLO"
-lower("HELLO")           # "hello"
-title("hello world")     # "Hello World"
-trim("  hello  ")        # "hello"
-format("Hello %s", "World")  # "Hello World"
+```bash
+terraform apply -auto-approve -var="instance_count=15"
 ```
 
-### Funciones de Listas
+Aplica con un valor de `instance_count` mayor a 10, lo que debe cambiar `deployment_size` de `pequeno` a `grande`. Revisa el output `locals_calculados` para confirmar el cambio.
 
-```hcl
-length([1, 2, 3])        # 3
-concat([1, 2], [3, 4])   # [1, 2, 3, 4]
-join(", ", ["a", "b"])   # "a, b"
-split(",", "a,b,c")      # ["a", "b", "c"]
+```bash
+terraform output locals_calculados
 ```
 
-### Funciones de Mapas
+Confirma que `deployment_size` ahora muestra `grande` gracias al condicional ternario anidado con el nuevo valor de `instance_count`.
 
-```hcl
-merge({a = 1}, {b = 2})  # {a = 1, b = 2}
-keys({a = 1, b = 2})     # ["a", "b"]
-values({a = 1, b = 2})   # [1, 2]
+### Paso 9: Volver al directorio del lab y validar
+
+```bash
+cd /root/lab
 ```
 
-### Funciones Numéricas
+Regresa al directorio raiz del lab donde se encuentra el script de validacion.
 
-```hcl
-max(1, 5, 3)             # 5
-min(1, 5, 3)             # 1
-abs(-5)                  # 5
-ceil(3.2)                # 4
-floor(3.8)               # 3
+```bash
+bash validate-lab.sh
 ```
 
-### Funciones de Fecha
+Ejecuta todas las verificaciones automaticas para confirmar que el lab fue completado correctamente.
 
-```hcl
-timestamp()              # "2026-04-14T23:10:00Z"
-formatdate("YYYY-MM-DD", timestamp())  # "2026-04-14"
-```
+## Conceptos
 
-## 🧪 Experimentos Adicionales
-
-### Experimento 4: Validación de Variables
-
-Agrega validación a las variables:
-
-```hcl
-variable "instance_count" {
-  type    = number
-  default = 3
-  
-  validation {
-    condition     = var.instance_count > 0 && var.instance_count <= 100
-    error_message = "Instance count debe estar entre 1 y 100."
-  }
-}
-```
-
-### Experimento 5: Variables Sensibles
-
-```hcl
-variable "db_password" {
-  type      = string
-  sensitive = true
-  default   = "super-secret-password"
-}
-
-output "password_length" {
-  value = length(var.db_password)
-  # No muestra el password, solo su longitud
-}
-```
-
-## ✅ Criterios de Validación
-
-1. ✅ Proyecto `lab2-hcl` creado
-2. ✅ Variables de todos los tipos definidas
-3. ✅ Locals con cálculos y funciones
-4. ✅ Outputs mostrando resultados
-5. ✅ Terraform console explorado
-6. ✅ Experimentos con variables completados
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ Sintaxis HCL básica
-- ✅ Tipos de datos primitivos y complejos
-- ✅ Variables de entrada
-- ✅ Locals para cálculos
-- ✅ Expresiones condicionales (ternario)
-- ✅ Interpolación de strings
-- ✅ Funciones built-in de Terraform
-- ✅ Terraform console para testing
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform HCL Master Badge**
+| Concepto | Descripcion |
+|---|---|
+| `string` | Cadena de texto: `"PeruApp"` |
+| `number` | Entero o decimal: `3`, `3.14` |
+| `bool` | Booleano: `true`, `false` |
+| `list(type)` | Lista ordenada con elementos del mismo tipo |
+| `map(type)` | Mapa clave-valor con valores del mismo tipo |
+| `object({...})` | Estructura con atributos tipados individualmente |
+| `locals` | Bloque para valores calculados reutilizables dentro del modulo |
+| Ternario | `condition ? valor_si_true : valor_si_false` |
+| `upper` / `lower` | Funciones de transformacion de strings |
+| `length` | Cuenta elementos en una lista, mapa o string |
+| `join` | Une elementos de una lista con un separador |
+| `format` | Formatea un string al estilo printf |
+| `terraform console` | Consola interactiva para evaluar expresiones HCL |
 
 ---
 
-**Anterior:** [Módulo 1](../../01-iac-fundamentals/)  
+**Anterior:** [Modulo 1](../../01-iac-fundamentals/)
 **Siguiente:** [Lab 2 - Providers](../lab2-providers/)

@@ -2,44 +2,63 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-DataSources-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Aprender a consultar infraestructura existente usando data sources para obtener información dinámica.
+## Objetivo
 
-## ⏱️ Duración
+Consultar datos externos o recursos existentes usando data sources del provider `local`. Entender la diferencia entre un recurso (`resource`) y una fuente de datos (`data`), y usar los datos leídos para generar archivos de configuración derivados.
+
+## Duración
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 1 completado
-- Terraform instalado
-- AWS CLI configurado (opcional para ejemplos AWS)
-- Editor de texto
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Lab 1 completado
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear el Directorio del Proyecto
+## Instrucciones Paso a Paso
+
+### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-mkdir lab2-data-sources
-cd lab2-data-sources
+mkdir -p /root/lab/output
 ```
 
-### Paso 2: Data Sources Locales
+El directorio `output/` almacenará los archivos que Terraform crea y los que leerá como data sources. Mantenerlos separados de los archivos `.tf` facilita la inspección.
 
-Primero crearemos archivos locales para luego consultarlos con data sources.
+### Paso 2: Crear main.tf con el Provider
 
-Crea `local-data-sources.tf`:
+```bash
+touch /root/lab/main.tf
+```
 
-```hcl
-# local-data-sources.tf - Data sources con archivos locales
-
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
+EOF
+```
 
-# Crear un archivo de configuración
-resource "local_file" "config" {
-  filename = "${path.module}/app-config.json"
-  content  = jsonencode({
+El bloque `terraform` fija la versión mínima de Terraform y declara los providers necesarios. El provider `local` permite crear y leer archivos en el sistema de archivos del host.
+
+### Paso 3: Crear resources.tf — Archivos de Origen
+
+```bash
+touch /root/lab/resources.tf
+```
+
+```bash
+cat > /root/lab/resources.tf <<'EOF'
+# Crear un archivo JSON de configuracion que luego leeremos con un data source
+resource "local_file" "app_config" {
+  filename = "/root/lab/output/app-config.json"
+  content = jsonencode({
     app_name    = "MyApp"
     version     = "1.0.0"
     environment = "production"
@@ -47,668 +66,230 @@ resource "local_file" "config" {
   })
 }
 
-# Data source para leer el archivo
-data "local_file" "read_config" {
-  filename = local_file.config.filename
-  
-  # Depende del recurso
-  depends_on = [local_file.config]
+# Crear archivos de configuracion por entorno
+resource "local_file" "env_dev" {
+  filename = "/root/lab/output/env-dev.json"
+  content = jsonencode({
+    environment = "dev"
+    replicas    = 1
+    memory      = "512Mi"
+  })
 }
 
-# Decodificar el JSON
+resource "local_file" "env_staging" {
+  filename = "/root/lab/output/env-staging.json"
+  content = jsonencode({
+    environment = "staging"
+    replicas    = 2
+    memory      = "1Gi"
+  })
+}
+
+resource "local_file" "env_prod" {
+  filename = "/root/lab/output/env-prod.json"
+  content = jsonencode({
+    environment = "prod"
+    replicas    = 5
+    memory      = "2Gi"
+  })
+}
+EOF
+```
+
+Estos `local_file` son los recursos que Terraform creará y gestionará. En un escenario real representarían recursos de nube que ya existen; aquí los creamos nosotros para poder leerlos después con data sources.
+
+### Paso 4: Crear data-sources.tf — Leer Datos con Data Sources
+
+```bash
+touch /root/lab/data-sources.tf
+```
+
+```bash
+cat > /root/lab/data-sources.tf <<'EOF'
+# Leer el archivo JSON creado en resources.tf
+# depends_on garantiza que el archivo exista antes de intentar leerlo
+data "local_file" "read_config" {
+  filename   = local_file.app_config.filename
+  depends_on = [local_file.app_config]
+}
+
+# Decodificar el JSON leido y guardarlo en un local para reutilizarlo
 locals {
   config_data = jsondecode(data.local_file.read_config.content)
 }
 
-# Usar la configuración leída
-resource "local_file" "app_info" {
-  filename = "${path.module}/app-info.txt"
-  content  = <<-EOT
-    Application: ${local.config_data.app_name}
-    Version: ${local.config_data.version}
-    Environment: ${local.config_data.environment}
-    Port: ${local.config_data.port}
-  EOT
-}
-
-# Outputs
-output "config_content" {
-  value = local.config_data
-}
-```
-
-Ejecuta:
-
-```bash
-# Inicializar
-terraform init
-
-# Aplicar
-terraform apply -auto-approve
-
-# Ver el output
-terraform output config_content
-
-# Ver los archivos creados
-cat app-config.json
-cat app-info.txt
-```
-
-### Paso 3: Data Sources con HTTP
-
-Crea `http-data-sources.tf`:
-
-```hcl
-# http-data-sources.tf - Consultar APIs externas
-
-terraform {
-  required_providers {
-    http = {
-      source  = "hashicorp/http"
-      version = "~> 3.0"
-    }
-  }
-}
-
-# Obtener IP pública
-data "http" "my_ip" {
-  url = "https://ifconfig.me/ip"
-}
-
-# Obtener información de GitHub
-data "http" "github_terraform" {
-  url = "https://api.github.com/repos/hashicorp/terraform"
-  
-  request_headers = {
-    Accept = "application/vnd.github.v3+json"
-  }
-}
-
-# Parsear respuesta de GitHub
-locals {
-  github_data = jsondecode(data.http.github_terraform.response_body)
-}
-
-# Crear archivo con la información
-resource "local_file" "external_data" {
-  filename = "${path.module}/external-data.txt"
-  content  = <<-EOT
-    My Public IP: ${trimspace(data.http.my_ip.response_body)}
-    
-    Terraform Repository:
-    - Name: ${local.github_data.name}
-    - Stars: ${local.github_data.stargazers_count}
-    - Forks: ${local.github_data.forks_count}
-    - Language: ${local.github_data.language}
-    - Description: ${local.github_data.description}
-  EOT
-}
-
-# Outputs
-output "my_public_ip" {
-  value = trimspace(data.http.my_ip.response_body)
-}
-
-output "terraform_stars" {
-  value = local.github_data.stargazers_count
-}
-```
-
-Ejecuta:
-
-```bash
-# Aplicar
-terraform apply -auto-approve
-
-# Ver outputs
-terraform output my_public_ip
-terraform output terraform_stars
-
-# Ver el archivo generado
-cat external-data.txt
-```
-
-### Paso 4: Data Sources con AWS (Opcional)
-
-Si tienes AWS configurado, crea `aws-data-sources.tf`:
-
-```hcl
-# aws-data-sources.tf - Consultar recursos AWS
-
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
-# Obtener información de la cuenta AWS
-data "aws_caller_identity" "current" {}
-
-# Obtener zonas de disponibilidad
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-# Obtener AMI más reciente de Ubuntu
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]  # Canonical
-  
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
-  }
-  
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-# Obtener VPC por defecto
-data "aws_vpc" "default" {
-  default = true
-}
-
-# Obtener subnets de la VPC
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# Obtener región actual
-data "aws_region" "current" {}
-
-# Crear archivo con información AWS
-resource "local_file" "aws_info" {
-  filename = "${path.module}/aws-info.txt"
-  content  = <<-EOT
-    AWS Account Information:
-    - Account ID: ${data.aws_caller_identity.current.account_id}
-    - User ID: ${data.aws_caller_identity.current.user_id}
-    - ARN: ${data.aws_caller_identity.current.arn}
-    
-    Region: ${data.aws_region.current.name}
-    
-    Availability Zones:
-    ${join("\n    ", data.aws_availability_zones.available.names)}
-    
-    Ubuntu AMI:
-    - ID: ${data.aws_ami.ubuntu.id}
-    - Name: ${data.aws_ami.ubuntu.name}
-    - Creation Date: ${data.aws_ami.ubuntu.creation_date}
-    
-    Default VPC:
-    - ID: ${data.aws_vpc.default.id}
-    - CIDR: ${data.aws_vpc.default.cidr_block}
-    - Subnets: ${length(data.aws_subnets.default.ids)}
-  EOT
-}
-
-# Outputs
-output "aws_account_id" {
-  value = data.aws_caller_identity.current.account_id
-}
-
-output "ubuntu_ami_id" {
-  value = data.aws_ami.ubuntu.id
-}
-
-output "availability_zones" {
-  value = data.aws_availability_zones.available.names
-}
-```
-
-Ejecuta:
-
-```bash
-# Aplicar
-terraform apply -auto-approve
-
-# Ver outputs
-terraform output aws_account_id
-terraform output ubuntu_ami_id
-terraform output availability_zones
-
-# Ver el archivo
-cat aws-info.txt
-```
-
-### Paso 5: Usar Data Sources en Resources
-
-Crea `data-in-resources.tf`:
-
-```hcl
-# data-in-resources.tf - Usar data sources en recursos
-
-# Crear archivo base
-resource "local_file" "base" {
-  filename = "${path.module}/base.txt"
-  content  = "Base Configuration"
-}
-
-# Leer el archivo base
-data "local_file" "base_read" {
-  filename   = local_file.base.filename
-  depends_on = [local_file.base]
-}
-
-# Crear archivo derivado usando data source
-resource "local_file" "derived" {
-  filename = "${path.module}/derived.txt"
-  content  = <<-EOT
-    Derived from: ${data.local_file.base_read.filename}
-    Original content: ${data.local_file.base_read.content}
-    Content length: ${length(data.local_file.base_read.content)}
-    Timestamp: ${timestamp()}
-  EOT
-}
-
-# Crear múltiples archivos basados en data
-resource "local_file" "copies" {
-  count = 3
-  
-  filename = "${path.module}/copy-${count.index}.txt"
-  content  = "Copy ${count.index} of: ${data.local_file.base_read.content}"
-}
-```
-
-Ejecuta:
-
-```bash
-# Aplicar
-terraform apply -auto-approve
-
-# Ver archivos creados
-ls -la *.txt
-
-# Ver contenido
-cat derived.txt
-cat copy-0.txt
-```
-
-### Paso 6: Data Sources con Filtros
-
-Crea `data-filters.tf`:
-
-```hcl
-# data-filters.tf - Filtros en data sources
-
-# Crear varios archivos de prueba
-resource "local_file" "test_files" {
-  for_each = {
-    dev     = "Development Environment"
-    staging = "Staging Environment"
-    prod    = "Production Environment"
-  }
-  
-  filename = "${path.module}/${each.key}-config.txt"
-  content  = each.value
-}
-
-# Leer archivo específico
+# Leer el archivo del entorno de produccion
 data "local_file" "prod_config" {
-  filename   = "${path.module}/prod-config.txt"
-  depends_on = [local_file.test_files]
+  filename   = local_file.env_prod.filename
+  depends_on = [local_file.env_prod]
 }
 
-# Crear resumen
-resource "local_file" "summary" {
-  filename = "${path.module}/summary.txt"
-  content  = <<-EOT
-    Production Configuration:
-    ${data.local_file.prod_config.content}
-    
-    File: ${data.local_file.prod_config.filename}
-    ID: ${data.local_file.prod_config.id}
-  EOT
+locals {
+  prod_data = jsondecode(data.local_file.prod_config.content)
 }
+EOF
 ```
 
-Ejecuta:
+Un `data` block no crea ni destruye nada: solo lee información ya existente y la expone como atributos. La referencia `data.local_file.read_config.content` funciona igual que `local_file.app_config.content`, pero proviene de una lectura en tiempo de plan.
+
+### Paso 5: Crear derived.tf — Archivos Derivados a Partir de los Data Sources
 
 ```bash
-# Aplicar
-terraform apply -auto-approve
-
-# Ver archivos
-ls -la *-config.txt
-cat summary.txt
+touch /root/lab/derived.tf
 ```
 
-### Paso 7: Data Sources Dinámicos
-
-Crea `dynamic-data.tf`:
-
-```hcl
-# dynamic-data.tf - Data sources dinámicos
-
-# Variable para el entorno
-variable "environment" {
-  type    = string
-  default = "dev"
+```bash
+cat > /root/lab/derived.tf <<'EOF'
+# Generar un resumen usando los datos leidos con el data source
+resource "local_file" "app_info" {
+  filename = "/root/lab/output/app-info.txt"
+  content  = <<-EOT
+    Application : ${local.config_data.app_name}
+    Version     : ${local.config_data.version}
+    Environment : ${local.config_data.environment}
+    Port        : ${local.config_data.port}
+  EOT
 }
 
-# Crear configuraciones por entorno
-resource "local_file" "env_configs" {
-  for_each = {
-    dev = {
-      replicas = 1
-      memory   = "512Mi"
-    }
-    staging = {
-      replicas = 2
-      memory   = "1Gi"
-    }
-    prod = {
-      replicas = 5
-      memory   = "2Gi"
-    }
-  }
-  
-  filename = "${path.module}/env-${each.key}.json"
-  content = jsonencode({
-    environment = each.key
-    replicas    = each.value.replicas
-    memory      = each.value.memory
-  })
-}
-
-# Leer configuración del entorno actual
-data "local_file" "current_env" {
-  filename   = "${path.module}/env-${var.environment}.json"
-  depends_on = [local_file.env_configs]
-}
-
-# Parsear y usar
-locals {
-  env_config = jsondecode(data.local_file.current_env.content)
-}
-
-# Crear deployment basado en el entorno
+# Generar un manifiesto de deployment usando los datos de produccion
 resource "local_file" "deployment" {
-  filename = "${path.module}/deployment.yaml"
+  filename = "/root/lab/output/deployment.yaml"
   content  = <<-EOT
     apiVersion: apps/v1
     kind: Deployment
     metadata:
-      name: myapp
+      name: ${local.config_data.app_name}
     spec:
-      replicas: ${local.env_config.replicas}
+      replicas: ${local.prod_data.replicas}
       template:
         spec:
           containers:
           - name: app
-            image: myapp:latest
+            image: ${local.config_data.app_name}:${local.config_data.version}
+            ports:
+            - containerPort: ${local.config_data.port}
             resources:
               limits:
-                memory: ${local.env_config.memory}
+                memory: ${local.prod_data.memory}
   EOT
 }
 
-# Output
-output "deployment_config" {
-  value = local.env_config
+# Crear tres copias del config usando count
+resource "local_file" "config_copies" {
+  count    = 3
+  filename = "/root/lab/output/config-copy-${count.index}.txt"
+  content  = "Copy ${count.index}: ${local.config_data.app_name} v${local.config_data.version}"
 }
+EOF
 ```
 
-Ejecuta:
+Los recursos en `derived.tf` dependen implícitamente de los data sources a través de los `locals`. Terraform los crea en el orden correcto sin necesidad de `depends_on` explícito.
+
+### Paso 6: Crear outputs.tf
 
 ```bash
-# Aplicar con dev (default)
-terraform apply -auto-approve
-
-# Ver deployment
-cat deployment.yaml
-
-# Cambiar a producción
-terraform apply -var="environment=prod" -auto-approve
-
-# Ver cambios en deployment
-cat deployment.yaml
+touch /root/lab/outputs.tf
 ```
-
-### Paso 8: Terraform Console para Testing
 
 ```bash
-# Abrir consola interactiva
-terraform console
+cat > /root/lab/outputs.tf <<'EOF'
+output "app_name" {
+  description = "Nombre de la aplicacion leido desde el data source"
+  value       = local.config_data.app_name
+}
 
-# Probar data sources
-> data.local_file.current_env.content
-> jsondecode(data.local_file.current_env.content)
-> local.env_config.replicas
+output "app_version" {
+  description = "Version leida desde el data source"
+  value       = local.config_data.version
+}
 
-# Probar funciones
-> length(data.local_file.current_env.content)
-> upper(local.env_config.environment)
+output "prod_replicas" {
+  description = "Replicas de produccion leidas desde el data source"
+  value       = local.prod_data.replicas
+}
 
-# Salir
-> exit
+output "config_file_id" {
+  description = "ID (hash SHA1) del archivo de configuracion"
+  value       = data.local_file.read_config.id
+}
+EOF
 ```
 
-### Paso 9: Inspeccionar Data Sources
+Los outputs exponen valores del estado de Terraform hacia el exterior. El atributo `id` de `local_file` es el hash SHA1 del contenido del archivo, útil para detectar cambios.
+
+### Paso 7: Inicializar y Aplicar
 
 ```bash
-# Listar todos los recursos y data sources
-terraform state list
-
-# Ver detalles de un data source
-terraform state show data.local_file.current_env
-
-# Ver todos los outputs
-terraform output
-
-# Ver output específico
-terraform output deployment_config
+terraform -chdir=/root/lab init
 ```
-
-### Paso 10: Limpiar
 
 ```bash
-# Destruir todos los recursos
-terraform destroy -auto-approve
-
-# Verificar
-terraform state list
-# (debe estar vacío)
-
-# Limpiar archivos
-rm -f *.txt *.json *.yaml
+terraform -chdir=/root/lab apply -auto-approve
 ```
 
-### Paso 11: Ejecutar Validación
+Terraform ejecuta primero los `resource` para crear los archivos, luego lee los `data` sources, y finalmente crea los recursos derivados. Observa el orden en la salida del apply.
+
+### Paso 8: Verificar Outputs y Estado
 
 ```bash
-cd ..
-./validate-lab.sh
+terraform -chdir=/root/lab output
 ```
-
-## 📚 Data Sources Explicados
-
-### Sintaxis Básica
-
-```hcl
-data "provider_type" "name" {
-  # Argumentos de búsqueda
-  filter {
-    name   = "key"
-    values = ["value"]
-  }
-}
-
-# Usar en recursos
-resource "..." "..." {
-  attribute = data.provider_type.name.attribute
-}
-```
-
-### Data Sources Comunes
-
-#### AWS
-
-```hcl
-# AMI más reciente
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]
-  
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/*"]
-  }
-}
-
-# VPC por defecto
-data "aws_vpc" "default" {
-  default = true
-}
-
-# Zonas de disponibilidad
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-# Información de la cuenta
-data "aws_caller_identity" "current" {}
-```
-
-#### Local
-
-```hcl
-# Leer archivo
-data "local_file" "config" {
-  filename = "${path.module}/config.json"
-}
-```
-
-#### HTTP
-
-```hcl
-# Consultar API
-data "http" "example" {
-  url = "https://api.example.com/data"
-  
-  request_headers = {
-    Accept = "application/json"
-  }
-}
-```
-
-## 💡 Mejores Prácticas
-
-1. **Usa data sources para datos dinámicos**
-   ```hcl
-   # ✅ BIEN - AMI dinámica
-   data "aws_ami" "ubuntu" {
-     most_recent = true
-   }
-   
-   # ❌ MAL - AMI hardcodeada
-   ami = "ami-12345"
-   ```
-
-2. **Filtra apropiadamente**
-   ```hcl
-   # ✅ BIEN - Filtros específicos
-   data "aws_ami" "ubuntu" {
-     most_recent = true
-     owners      = ["099720109477"]
-     
-     filter {
-       name   = "name"
-       values = ["ubuntu/images/hvm-ssd/*"]
-     }
-   }
-   ```
-
-3. **Maneja errores**
-   ```hcl
-   # Usa count para data sources opcionales
-   data "aws_vpc" "selected" {
-     count = var.vpc_id != "" ? 1 : 0
-     id    = var.vpc_id
-   }
-   ```
-
-4. **Documenta data sources**
-   ```hcl
-   # Obtener la AMI más reciente de Ubuntu 22.04
-   # Usado para todas las instancias EC2
-   data "aws_ami" "ubuntu" {
-     # ...
-   }
-   ```
-
-## 🔧 Troubleshooting
-
-### Error: "No matching resource found"
 
 ```bash
-# El data source no encontró resultados
-# Verifica los filtros y que el recurso existe
-
-# Ejemplo: Verificar AMIs disponibles
-aws ec2 describe-images --owners 099720109477 --filters "Name=name,Values=ubuntu*"
+terraform -chdir=/root/lab state list
 ```
 
-### Error: "Multiple matches found"
+`terraform output` imprime los valores declarados en `outputs.tf`. `state list` muestra tanto los recursos (`local_file.*`) como los data sources (`data.local_file.*`) registrados en el estado.
+
+### Paso 9: Inspeccionar un Data Source en el Estado
 
 ```bash
-# El data source encontró múltiples resultados
-# Agrega most_recent = true o filtros más específicos
-
-data "aws_ami" "ubuntu" {
-  most_recent = true  # Toma la más reciente
-  # ...
-}
+terraform -chdir=/root/lab state show data.local_file.read_config
 ```
 
-### Data source no se actualiza
+Los data sources quedan registrados en el estado como `data.<tipo>.<nombre>`. Puedes inspeccionarlos igual que cualquier recurso para ver qué atributos leyeron.
+
+### Paso 10: Verificar los Archivos Generados
 
 ```bash
-# Forzar refresh
-terraform refresh
-
-# O aplicar de nuevo
-terraform apply -refresh-only
+ls /root/lab/output/
 ```
 
-## ✅ Criterios de Validación
+```bash
+cat /root/lab/output/app-info.txt
+```
 
-1. ✅ Proyecto `lab2-data-sources` creado
-2. ✅ Data sources locales implementados
-3. ✅ Data sources HTTP implementados
-4. ✅ Data sources usados en resources
-5. ✅ Filtros aplicados correctamente
-6. ✅ Terraform console usado
-7. ✅ Recursos limpiados
+```bash
+cat /root/lab/output/deployment.yaml
+```
 
-## 🎓 Conceptos Aprendidos
+El archivo `app-info.txt` contiene valores tomados del JSON original a través del data source. `deployment.yaml` combina datos de dos data sources distintos en un único archivo de salida.
 
-- ✅ Qué son los data sources
-- ✅ Data sources locales
-- ✅ Data sources HTTP
-- ✅ Data sources AWS (opcional)
-- ✅ Filtros en data sources
-- ✅ Usar data sources en resources
-- ✅ Data sources dinámicos
-- ✅ Terraform console
+### Paso 11: Ir al Directorio del Lab
 
-## 🏆 Badge
+```bash
+cd /root/lab
+```
 
-Al completar este laboratorio obtienes: **Terraform Data Sources Expert Badge**
+### Paso 12: Ejecutar la Validación
+
+```bash
+bash validate-lab.sh
+```
+
+## Conceptos
+
+| Concepto | Descripcion |
+|---|---|
+| `data` block | Lee información de recursos existentes sin crearlos ni destruirlos |
+| `data.<tipo>.<nombre>.<atributo>` | Sintaxis para referenciar un atributo de un data source |
+| `depends_on` en data source | Garantiza que el dato existe antes de intentar leerlo; necesario cuando el dato lo crea el mismo plan |
+| `jsondecode()` | Convierte una cadena JSON en un objeto HCL que puede referenciarse con notación de punto |
+| `locals` | Valores intermedios calculados una sola vez y reutilizables en todo el módulo |
+| `id` en `local_file` | Hash SHA1 del contenido; cambia si el archivo cambia, lo que permite detectar drift |
+| `output` | Expone valores del estado hacia el exterior; pueden ser consumidos por otros módulos o por el operador |
 
 ---
 
-**Anterior:** [Lab 1 - Resources Lifecycle](../lab1-resources-lifecycle/)  
-**Siguiente:** [Lab 3 - Variables con Validación](../lab3-variables-validacion/)
+**Anterior:** [Lab 1 - Resources Lifecycle](../lab1-resources-lifecycle/)
+**Siguiente:** [Lab 3 - Variables con Validacion](../lab3-variables-validacion/)

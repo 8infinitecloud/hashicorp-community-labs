@@ -2,30 +2,44 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-State_Locking-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Entender el mecanismo de locking del state para evitar conflictos cuando múltiples personas trabajan con la misma infraestructura.
+## Objetivo
 
-## ⏱️ Duración
+Entender el mecanismo de locking del state de Terraform: como se adquiere, que estructura tiene, como se libera forzosamente, y como se configura con DynamoDB en un backend S3 real.
+
+## Duracion
+
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 1 del módulo 06 completado
-- Terraform instalado
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Lab 1 del modulo 06 completado
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear el Proyecto Base
+## Instrucciones Paso a Paso
+
+### Paso 1: Preparar el directorio de trabajo
 
 ```bash
-mkdir lab2-state-locking
-cd lab2-state-locking
+cd /root/lab
 ```
 
-Crea `main.tf`:
+### Paso 2: Crear main.tf
 
-```hcl
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
 
 variable "entorno" {
@@ -35,33 +49,45 @@ variable "entorno" {
 
 resource "local_file" "config" {
   filename = "${path.module}/config-${var.entorno}.txt"
-  content  = "entorno=${var.entorno}\ntimestamp=${timestamp()}\n"
+  content  = "entorno=${var.entorno}\n"
 }
 
-output "archivo" { value = local_file.config.filename }
+output "archivo" {
+  value = local_file.config.filename
+}
+EOF
 ```
+
+`main.tf` crea un archivo cuyo nombre incluye la variable `entorno`. Al aplicar con distintos valores de `entorno` se generan archivos distintos, lo que permite ver como el state se actualiza sin recrear recursos innecesariamente.
+
+### Paso 3: Inicializar y aplicar
 
 ```bash
 terraform init
+```
+
+```bash
 terraform apply -auto-approve
 ```
 
-### Paso 2: Observar el Lock File Local
+Terraform inicializa el provider local y aplica la configuracion. El state resultante `terraform.tfstate` refleja el recurso creado.
+
+### Paso 4: Inspeccionar el lock file de providers
 
 ```bash
-# Terraform crea un .terraform.lock.hcl para versiones de providers
 cat .terraform.lock.hcl
-
-# Durante un apply, Terraform crea un lock en el backend
-# Con backend local: archivo .terraform.tfstate.lock.info
-# Con backend S3: registro en DynamoDB
 ```
 
-### Paso 3: Simular un Lock Activo
+`.terraform.lock.hcl` es el lock file de versiones de providers, diferente al lock de operaciones. Fija los hashes exactos del provider descargado para garantizar reproducibilidad entre equipos.
+
+### Paso 5: Simular un lock activo de operacion
 
 ```bash
-# Simula el archivo de lock que crea Terraform durante apply
-cat > .terraform.tfstate.lock.info << 'EOF'
+touch .terraform.tfstate.lock.info
+```
+
+```bash
+cat > .terraform.tfstate.lock.info <<'EOF'
 {
   "ID": "abc123-def456-ghi789",
   "Operation": "OperationTypeApply",
@@ -72,36 +98,29 @@ cat > .terraform.tfstate.lock.info << 'EOF'
   "Path": "terraform.tfstate"
 }
 EOF
+```
 
-echo "Lock simulado creado."
+Durante un `terraform apply` real con backend local, Terraform crea este archivo JSON. Mientras existe, cualquier otro comando que necesite escribir el state fallara con "Error acquiring the state lock". El campo `ID` es el identificador unico del lock.
+
+### Paso 6: Leer el lock info
+
+```bash
 cat .terraform.tfstate.lock.info
 ```
 
-### Paso 4: Entender el Backend S3 con DynamoDB Locking
+El campo `Who` identifica que usuario y maquina tomaron el lock. `Operation` indica que tipo de operacion lo adquirio. `Created` permite saber si el lock es reciente o es un lock huerfano de un proceso que ya termino.
 
-Crea `backend-con-locking.tf.referencia`:
+### Paso 7: Crear la referencia de backend con locking DynamoDB
 
-```hcl
-# REFERENCIA: S3 + DynamoDB locking
-# Requiere AWS — estudia la estructura
-
-terraform {
-  backend "s3" {
-    bucket         = "mi-empresa-state"
-    key            = "app/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "terraform-locks"   # ← tabla de locking
-  }
-}
-
-# La tabla DynamoDB debe existir con:
-# - Partition key: LockID (String)
-# - Billing: PAY_PER_REQUEST
+```bash
+touch backend-con-locking.tf.referencia
 ```
 
 ```bash
-cat > backend-con-locking.tf.referencia << 'EOF'
+cat > backend-con-locking.tf.referencia <<'EOF'
+# REFERENCIA: backend S3 + DynamoDB locking
+# No ejecutar en este lab — requiere credenciales AWS reales
+
 terraform {
   backend "s3" {
     bucket         = "mi-empresa-state"
@@ -111,115 +130,99 @@ terraform {
     dynamodb_table = "terraform-locks"
   }
 }
+
+# La tabla DynamoDB debe tener:
+# - Partition key: LockID (tipo String)
+# - Billing mode: PAY_PER_REQUEST
 EOF
-cat backend-con-locking.tf.referencia
 ```
 
-### Paso 5: Forzar Liberación de un Lock
+En un backend S3 real, `dynamodb_table` reemplaza al archivo `.terraform.tfstate.lock.info`. Terraform escribe un item en DynamoDB al iniciar cualquier operacion de escritura. Si el item ya existe, la operacion falla con un error de lock, protegiendo el state de escrituras concurrentes.
+
+### Paso 8: Documentar el flujo de locking
 
 ```bash
-# Ver el ID del lock actual
-cat .terraform.tfstate.lock.info
-
-# En caso real donde el lock quedó huérfano:
-# terraform force-unlock <LOCK_ID>
-# Ejemplo:
-# terraform force-unlock abc123-def456-ghi789
-
-# Para este lab, simula el comando
-echo "Comando: terraform force-unlock abc123-def456-ghi789"
-echo "Este comando solo debe usarse cuando el proceso que creó el lock ya no existe"
-
-# Limpiar el lock simulado
-rm .terraform.tfstate.lock.info
-echo "Lock liberado"
+touch flujo-locking.md
 ```
 
-### Paso 6: Aplicar Normalmente (sin lock)
-
 ```bash
-# Ahora apply funciona sin conflicto
-terraform apply -var="entorno=staging" -auto-approve
-terraform state list
-```
-
-### Paso 7: Documentar el Flujo de Locking
-
-```bash
-cat > flujo-locking.md << 'EOF'
+cat > flujo-locking.md <<'EOF'
 # Flujo de Locking en Terraform
 
-## Secuencia Normal
+## Secuencia normal de apply
 1. `terraform apply` inicia
-2. Terraform adquiere el lock (escribe en DynamoDB)
-3. Ejecuta los cambios
-4. Libera el lock al terminar
+2. Terraform adquiere el lock (escribe en DynamoDB o crea .lock.info)
+3. Ejecuta el plan y aplica los cambios
+4. Libera el lock al terminar (borra el registro)
 
-## Cuando Otro Usuario Intenta Apply Simultáneo
+## Cuando otro usuario intenta apply simultaneo
 1. Usuario B ejecuta `terraform apply`
 2. Terraform detecta el lock activo
 3. Error: "Error acquiring the state lock"
 4. Usuario B debe esperar o contactar a Usuario A
 
-## Cuándo Usar force-unlock
-- Solo cuando el proceso que creó el lock ya NO existe
-- Proceso crasheó / terminal cerrada accidentalmente
-- Nunca forzar unlock mientras otro apply esté corriendo
+## Cuando usar force-unlock
+- Solo cuando el proceso que creo el lock ya NO existe
+- El proceso crasheo o la terminal se cerro accidentalmente
+- NUNCA forzar unlock mientras otro apply este corriendo
 
-## Verificar Lock Activo
-- Backend S3: consultar tabla DynamoDB
-- Backend local: buscar archivo .terraform.tfstate.lock.info
+## Comando para liberar un lock huerfano
+terraform force-unlock <LOCK_ID>
+
+## Backend local vs S3
+- Local: archivo .terraform.tfstate.lock.info en disco
+- S3:    item en tabla DynamoDB con clave LockID
 EOF
-
-cat flujo-locking.md
 ```
 
-### Paso 8: Ejecutar Validación
+`flujo-locking.md` sirve como referencia para el equipo. Documentar cuando es seguro usar `force-unlock` es critico porque ejecutarlo mientras hay un apply activo puede corromper el state.
+
+### Paso 9: Liberar el lock simulado
 
 ```bash
-./validate-lab.sh
+rm .terraform.tfstate.lock.info
 ```
-
-## ✅ Criterios de Validación
-
-1. ✅ Proyecto aplicado con state local
-2. ✅ Lock simulado creado e inspeccionado
-3. ✅ Configuración de DynamoDB locking documentada
-4. ✅ Flujo de locking comprendido
-5. ✅ Lock liberado correctamente
-
-## 🔧 Troubleshooting
-
-### Error: "Error acquiring the state lock"
-
-```
-Significa que otro proceso tiene el lock activo.
-Opciones:
-1. Esperar a que termine
-2. Si el proceso no existe: terraform force-unlock <ID>
-```
-
-### Lock huérfano en DynamoDB
 
 ```bash
-# Listar locks activos (requiere AWS CLI)
-# aws dynamodb scan --table-name terraform-locks
-
-# Forzar unlock
-# terraform force-unlock <LOCK_ID>
+echo "Lock liberado correctamente"
 ```
 
-## 🎓 Conceptos Aprendidos
+Eliminar el archivo `.terraform.tfstate.lock.info` es el equivalente local de lo que hace `terraform force-unlock`. En un backend S3 real, `force-unlock` borra el item de DynamoDB usando el ID del lock.
 
-- ✅ Qué es y para qué sirve el state locking
-- ✅ Cómo Terraform implementa locking con DynamoDB
-- ✅ Estructura del lock info
-- ✅ Cuándo y cómo usar `force-unlock`
-- ✅ Buenas prácticas para evitar conflictos de state
+### Paso 10: Aplicar con variable diferente para confirmar que el lock no interfiere
 
-## 🏆 Badge
+```bash
+terraform apply -var="entorno=staging" -auto-approve
+```
 
-Al completar este laboratorio obtienes: **Terraform State Locking Badge**
+```bash
+terraform state list
+```
+
+Con el lock liberado, el apply funciona normalmente. El state ahora refleja el archivo `config-staging.txt`. `terraform state list` confirma que el recurso esta gestionado correctamente.
+
+### Paso 11: Ejecutar validacion
+
+```bash
+cd /root/lab && bash validate-lab.sh
+```
+
+## Criterios de Validacion
+
+1. Terraform inicializado (`.terraform/` presente)
+2. `terraform.tfstate` existe con recursos
+3. `flujo-locking.md` creado y contiene la palabra "lock"
+4. Referencia de backend con DynamoDB creada
+5. `main.tf` usa `local_file`
+6. No queda un lock activo (`.terraform.tfstate.lock.info` no existe)
+
+## Conceptos Aprendidos
+
+- Que es y para que sirve el state locking
+- Como Terraform implementa locking con DynamoDB en S3
+- Estructura del lock info (ID, Operation, Who, Created)
+- Cuando y como usar `force-unlock` de forma segura
+- Diferencia entre lock de providers (`.terraform.lock.hcl`) y lock de operaciones
 
 ---
 

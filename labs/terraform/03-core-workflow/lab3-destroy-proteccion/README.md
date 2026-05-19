@@ -1,32 +1,43 @@
-# Lab 3: Destroy Selectivo y Protección
+# Lab 3: Destroy Selectivo y Proteccion de Recursos
 
 ![Terraform](https://img.shields.io/badge/Terraform-Protection-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Aprender a destruir recursos selectivamente y proteger recursos críticos contra destrucción accidental.
+## Objetivo
 
-## ⏱️ Duración
+Demostrar cómo el meta-argumento `lifecycle { prevent_destroy = true }` protege recursos críticos contra destrucción accidental, practicar el destroy selectivo con `-target`, y aprender el procedimiento correcto para remover la protección cuando sea necesario.
+
+## Duración
+
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 2 completado
-- Terraform instalado
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Lab 2 completado
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear el Proyecto
+## Instrucciones Paso a Paso
+
+### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-mkdir lab3-protection
-cd lab3-protection
+mkdir -p /root/lab
 ```
 
-### Paso 2: Crear main.tf
+Todos los archivos del lab se almacenarán bajo `/root/lab`. El state local también se creará aquí.
 
-```hcl
-# main.tf - Recursos con protección
+### Paso 2: Crear el Archivo de Configuración con Recursos Protegidos
 
+```bash
+touch /root/lab/main.tf
+```
+
+Crear el archivo vacío antes de escribir el contenido es una práctica que confirma que el directorio existe y tiene permisos de escritura.
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform {
+  required_version = ">= 1.0"
+
   required_providers {
     local = {
       source  = "hashicorp/local"
@@ -35,303 +46,202 @@ terraform {
   }
 }
 
-# Recurso temporal (puede destruirse)
-resource "local_file" "temp" {
-  filename = "temp.txt"
-  content  = "Este archivo es temporal"
+# Recurso temporal: sin proteccion, puede destruirse libremente
+resource "local_file" "temp_cache" {
+  filename = "/root/lab/output/cache.tmp"
+  content  = "cache temporal - puede eliminarse\n"
 }
 
-# Recurso de desarrollo (puede destruirse)
-resource "local_file" "dev" {
-  filename = "dev.txt"
-  content  = "Archivo de desarrollo"
+# Recurso de desarrollo: sin proteccion
+resource "local_file" "dev_notes" {
+  filename = "/root/lab/output/dev-notes.txt"
+  content  = "Notas de desarrollo - puede eliminarse\n"
 }
 
-# Recurso de producción (PROTEGIDO)
-resource "local_file" "production" {
-  filename = "production.txt"
-  content  = "Archivo de producción - NO ELIMINAR"
-  
+# Recurso critico: protegido contra destruccion accidental
+resource "local_file" "production_config" {
+  filename = "/root/lab/output/production.conf"
+  content  = "ENV=production\nDB_HOST=db.example.com\nAPI_KEY=secret\n"
+
   lifecycle {
     prevent_destroy = true
   }
 }
 
-# Recurso crítico (PROTEGIDO)
-resource "local_file" "database_backup" {
-  filename = "database_backup.txt"
-  content  = "Backup crítico de base de datos"
-  
+# Recurso critico: base de datos protegida
+resource "local_file" "database_schema" {
+  filename = "/root/lab/output/schema.sql"
+  content  = "-- Schema de produccion\nCREATE TABLE users (id INT PRIMARY KEY);\n"
+
   lifecycle {
     prevent_destroy = true
   }
 }
 
-output "files_created" {
+output "protected_files" {
   value = [
-    local_file.temp.filename,
-    local_file.dev.filename,
-    local_file.production.filename,
-    local_file.database_backup.filename
+    local_file.production_config.filename,
+    local_file.database_schema.filename,
   ]
 }
+
+output "unprotected_files" {
+  value = [
+    local_file.temp_cache.filename,
+    local_file.dev_notes.filename,
+  ]
+}
+EOF
 ```
 
-### Paso 3: Crear Todos los Recursos
+Los bloques `lifecycle { prevent_destroy = true }` hacen que Terraform genere un error en tiempo de plan si cualquier operación intenta destruir esos recursos. Es una red de seguridad que protege contra `terraform destroy` accidental o targets equivocados.
+
+### Paso 3: Inicializar y Aplicar Todos los Recursos
 
 ```bash
-terraform init
-terraform apply -auto-approve
-
-# Ver archivos creados
-ls -la *.txt
+terraform -chdir=/root/lab init
 ```
 
-### Paso 4: Experimento 1 - Destroy Selectivo
+Inicializa el provider `hashicorp/local` y prepara el directorio de trabajo.
 
 ```bash
-# Destruir recurso temporal
-terraform destroy -target=local_file.temp
-
-# Confirma con: yes
-
-# Ver qué queda
-terraform state list
-ls -la *.txt
+terraform -chdir=/root/lab apply -auto-approve
 ```
 
-### Paso 5: Experimento 2 - Destroy Múltiple
+Crea los cuatro recursos en disco. Tras el apply, el state registra todos ellos incluidos los dos protegidos.
 
 ```bash
-# Destruir recurso de desarrollo
-terraform destroy -target=local_file.dev
-
-# Ver qué queda
-terraform state list
+terraform -chdir=/root/lab state list
 ```
 
-### Paso 6: Experimento 3 - Intentar Destroy Protegido
+Confirma que los cuatro recursos están en el state antes de continuar con los experimentos de destrucción.
+
+### Paso 4: Destruir un Recurso No Protegido (Destroy Selectivo)
 
 ```bash
-# Intentar destruir recurso protegido
-terraform destroy -target=local_file.production
-
-# Output esperado:
-# Error: Instance cannot be destroyed
-# 
-# Resource local_file.production has lifecycle.prevent_destroy set,
-# but the plan calls for this resource to be destroyed.
+terraform -chdir=/root/lab destroy -target=local_file.temp_cache -auto-approve
 ```
 
-### Paso 7: Experimento 4 - Plan de Destrucción Total
+`destroy -target` elimina únicamente `temp_cache`. Al no tener `prevent_destroy`, la operación tiene éxito sin errores. Este es el comportamiento esperado para recursos descartables.
 
 ```bash
-# Ver plan de destrucción total
-terraform plan -destroy
-
-# Observa: Error por recursos protegidos
+terraform -chdir=/root/lab state list
 ```
 
-### Paso 8: Experimento 5 - Remover Protección
+El state ahora muestra tres recursos. `temp_cache` ha desaparecido; los demás permanecen intactos.
 
-Edita `main.tf` y comenta los bloques `lifecycle`:
+### Paso 5: Intentar Destruir un Recurso Protegido (Error Esperado)
 
-```hcl
-resource "local_file" "production" {
-  filename = "production.txt"
-  content  = "Archivo de producción - NO ELIMINAR"
-  
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
+```bash
+terraform -chdir=/root/lab destroy -target=local_file.production_config -auto-approve
+```
+
+Este comando fallará con un error similar a: `Error: Instance cannot be destroyed — Resource local_file.production_config has lifecycle.prevent_destroy set`. El error es intencional: `prevent_destroy` cumple exactamente su propósito. No se destruye ningún recurso.
+
+### Paso 6: Intentar un Destroy Total (Error Esperado)
+
+```bash
+terraform -chdir=/root/lab plan -destroy
+```
+
+`plan -destroy` calcula un plan de destrucción completa sin ejecutarlo. El plan también fallará porque incluye los recursos protegidos. Usar `-destroy` para revisar antes de ejecutar es una buena práctica; en este caso el error aparece en la fase segura de plan.
+
+### Paso 7: Remover la Proteccion para Poder Destruir
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
+  }
 }
+
+# Recurso temporal: sin proteccion
+resource "local_file" "temp_cache" {
+  filename = "/root/lab/output/cache.tmp"
+  content  = "cache temporal - puede eliminarse\n"
+}
+
+# Recurso de desarrollo: sin proteccion
+resource "local_file" "dev_notes" {
+  filename = "/root/lab/output/dev-notes.txt"
+  content  = "Notas de desarrollo - puede eliminarse\n"
+}
+
+# Proteccion removida deliberadamente para limpiar el lab
+resource "local_file" "production_config" {
+  filename = "/root/lab/output/production.conf"
+  content  = "ENV=production\nDB_HOST=db.example.com\nAPI_KEY=secret\n"
+}
+
+# Proteccion removida deliberadamente para limpiar el lab
+resource "local_file" "database_schema" {
+  filename = "/root/lab/output/schema.sql"
+  content  = "-- Schema de produccion\nCREATE TABLE users (id INT PRIMARY KEY);\n"
+}
+
+output "protected_files" {
+  value = [
+    local_file.production_config.filename,
+    local_file.database_schema.filename,
+  ]
+}
+
+output "unprotected_files" {
+  value = [
+    local_file.temp_cache.filename,
+    local_file.dev_notes.filename,
+  ]
+}
+EOF
+```
+
+Remover los bloques `lifecycle` es el paso obligatorio antes de destruir un recurso protegido. Se requiere un `apply` para que el state refleje el cambio de metadatos antes de poder ejecutar el destroy.
+
+```bash
+terraform -chdir=/root/lab apply -auto-approve
+```
+
+El apply actualiza el state con la nueva configuración (sin `prevent_destroy`). Los archivos en disco no cambian porque el contenido es idéntico; solo cambian los metadatos de lifecycle.
+
+### Paso 8: Destruir Todo al Finalizar el Lab
+
+```bash
+terraform -chdir=/root/lab destroy -auto-approve
+```
+
+Con la protección removida, `destroy` elimina los tres recursos restantes del state sin errores.
+
+### Paso 9: Ejecutar la Validacion del Lab
+
+```bash
+cd /root/lab
 ```
 
 ```bash
-# Aplicar cambio (actualiza state)
-terraform apply -auto-approve
-
-# Ahora sí puedes destruir
-terraform destroy -target=local_file.production
+bash validate-lab.sh
 ```
 
-### Paso 9: Limpiar Todo
+El script verifica que Terraform está instalado, el directorio fue inicializado, `main.tf` contiene recursos `local_file`, que se usó `prevent_destroy` en algún punto del lab, y que la configuración final es válida.
 
-```bash
-# Asegúrate de que no hay lifecycle blocks
-# Luego destruye todo
-terraform destroy -auto-approve
-```
+## Conceptos Clave
 
-### Paso 10: Ejecutar Validación
-
-```bash
-cd ..
-./validate-lab.sh
-```
-
-## 📚 Lifecycle: prevent_destroy
-
-### Sintaxis
-
-```hcl
-resource "tipo" "nombre" {
-  # configuración...
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-```
-
-### Casos de Uso Reales
-
-```hcl
-# Proteger base de datos de producción
-resource "aws_db_instance" "production" {
-  identifier = "prod-db"
-  # ...
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Proteger bucket S3 con datos críticos
-resource "aws_s3_bucket" "backups" {
-  bucket = "company-backups"
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Proteger VPC de producción
-resource "aws_vpc" "production" {
-  cidr_block = "10.0.0.0/16"
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# Proteger tabla DynamoDB
-resource "aws_dynamodb_table" "users" {
-  name = "users-prod"
-  # ...
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-```
-
-## 💡 Mejores Prácticas
-
-### 1. Protege Recursos Críticos
-
-```hcl
-# ✅ BIEN - Recursos de producción protegidos
-resource "aws_db_instance" "prod" {
-  # ...
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# ❌ MAL - Sin protección
-resource "aws_db_instance" "prod" {
-  # ...
-}
-```
-
-### 2. Usa Tags para Identificar
-
-```hcl
-resource "aws_instance" "web" {
-  # ...
-  
-  tags = {
-    Environment = "production"
-    Critical    = "true"
-  }
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-```
-
-### 3. Documenta la Protección
-
-```hcl
-# IMPORTANTE: Este recurso está protegido contra destrucción
-# Para eliminarlo, primero comenta el lifecycle block
-resource "aws_s3_bucket" "backups" {
-  bucket = "critical-backups"
-  
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-```
-
-## ⚠️ Advertencias
-
-1. **Solo protege contra `terraform destroy`**
-   - No protege contra eliminación manual en la consola
-   - No protege contra `terraform state rm`
-
-2. **Para eliminar un recurso protegido:**
-   - Comenta o elimina el `lifecycle` block
-   - Ejecuta `terraform apply` (actualiza state)
-   - Luego ejecuta `terraform destroy`
-
-3. **No es una protección absoluta**
-   - Es una capa de seguridad adicional
-   - Combina con IAM policies y backups
-
-## 🔧 Otros Lifecycle Rules
-
-```hcl
-resource "aws_instance" "web" {
-  # ...
-  
-  lifecycle {
-    # Prevenir destrucción
-    prevent_destroy = true
-    
-    # Crear antes de destruir
-    create_before_destroy = true
-    
-    # Ignorar cambios en ciertos atributos
-    ignore_changes = [tags, user_data]
-    
-    # Reemplazar si cambia otro recurso
-    replace_triggered_by = [aws_security_group.web]
-  }
-}
-```
-
-## ✅ Criterios de Validación
-
-1. ✅ Recursos con y sin protección creados
-2. ✅ Destroy selectivo ejecutado
-3. ✅ Intento de destroy protegido (debe fallar)
-4. ✅ Protección removida y recurso destruido
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ `lifecycle.prevent_destroy` para protección
-- ✅ Destroy selectivo con `-target`
-- ✅ Plan de destrucción sin ejecutar
-- ✅ Casos de uso reales de protección
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Protection Master Badge**
+| Concepto | Descripción |
+|---|---|
+| `lifecycle { prevent_destroy = true }` | Bloquea cualquier plan que intente destruir el recurso; error en fase de plan |
+| Proteccion en tiempo de plan | El error por `prevent_destroy` ocurre antes de modificar infraestructura |
+| Remover proteccion correctamente | Eliminar el bloque `lifecycle` + `apply` para actualizar metadatos en el state + `destroy` |
+| `destroy -target` | Elimina un recurso especifico del state; falla si el recurso tiene `prevent_destroy` |
+| `plan -destroy` | Calcula el plan de destruccion completa sin ejecutarlo; util para revisar impacto |
+| Recursos criticos | Bases de datos, configuraciones de produccion, certificados: candidatos naturales a `prevent_destroy` |
+| Limitaciones de `prevent_destroy` | No protege contra `terraform state rm` ni eliminacion manual fuera de Terraform |
 
 ---
 
-**Anterior:** [Lab 2 - Targets](../lab2-targets-incremental/)  
+**Anterior:** [Lab 2 - Targets Incremental](../lab2-targets-incremental/)
 **Siguiente:** [Lab 4 - Calidad y Debugging](../lab4-calidad-debugging/)

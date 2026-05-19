@@ -2,42 +2,34 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Modules-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
+## Objetivo
+
 Crear un módulo local reutilizable de Terraform: definir sus variables, recursos y outputs, luego invocarlo desde una configuración raíz y verificar que el estado refleje los recursos creados a través del módulo.
 
-## ⏱️ Duración
+## Duración
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Módulos 1–4 completados
+## Prerrequisitos
+
+- Módulos 1-4 completados
 - Terraform instalado (`terraform version` >= 1.0)
 
-## 🚀 Instrucciones Paso a Paso
+## Instrucciones Paso a Paso
 
 ### Paso 1: Crear la Estructura de Directorios
 
-Un módulo de Terraform es simplemente un directorio con archivos `.tf`. La convención es colocarlos bajo `modules/<nombre-del-modulo>/`.
-
 ```bash
-mkdir -p modules/web-server
+mkdir -p /root/lab/modules/web-server
 ```
 
-Verificar estructura:
-
-```bash
-tree .
-# .
-# └── modules/
-#     └── web-server/
-```
+Un módulo de Terraform es un directorio con archivos `.tf`. La convención es colocarlos bajo `modules/<nombre-del-modulo>/` dentro del proyecto raíz.
 
 ### Paso 2: Crear el Módulo — variables.tf
 
-Las variables definen la interfaz del módulo: qué parámetros acepta quien lo invoca.
-
-Crea `modules/web-server/variables.tf`:
-
-```hcl
+```bash
+touch /root/lab/modules/web-server/variables.tf
+cat > /root/lab/modules/web-server/variables.tf <<'EOF'
 variable "server_name" {
   description = "Nombre del servidor"
   type        = string
@@ -60,15 +52,16 @@ variable "environment" {
   type        = string
   default     = "dev"
 }
+EOF
 ```
+
+Las variables definen la interfaz del módulo: qué parámetros acepta quien lo invoca. Cualquier valor sin `default` es obligatorio.
 
 ### Paso 3: Crear el Módulo — main.tf
 
-Los recursos del módulo usan las variables del paso anterior.
-
-Crea `modules/web-server/main.tf`:
-
-```hcl
+```bash
+touch /root/lab/modules/web-server/main.tf
+cat > /root/lab/modules/web-server/main.tf <<'EOF'
 resource "local_file" "server_config" {
   filename = "${path.root}/output/servers/${var.server_name}.txt"
   content  = <<-EOT
@@ -83,17 +76,18 @@ resource "local_file" "server_log" {
   filename = "${path.root}/output/logs/${var.server_name}.log"
   content  = "Server ${var.server_name} initialized at ${timestamp()}"
 }
+EOF
 ```
+
+Los recursos del módulo usan las variables declaradas en el paso anterior. `path.root` apunta al directorio raíz del proyecto, no al directorio del módulo, por lo que los archivos de salida se crean en un lugar centralizado.
 
 ### Paso 4: Crear el Módulo — outputs.tf
 
-Los outputs exponen valores del módulo a quien lo invoca.
-
-Crea `modules/web-server/outputs.tf`:
-
-```hcl
+```bash
+touch /root/lab/modules/web-server/outputs.tf
+cat > /root/lab/modules/web-server/outputs.tf <<'EOF'
 output "config_path" {
-  description = "Ruta del archivo de configuración generado"
+  description = "Ruta del archivo de configuracion generado"
   value       = local_file.server_config.filename
 }
 
@@ -106,15 +100,25 @@ output "server_info" {
   description = "Resumen del servidor configurado"
   value       = "${var.server_name} (${var.server_type}) en puerto ${var.port}"
 }
+EOF
 ```
 
-### Paso 5: Crear la Configuración Raíz — main.tf
+Los outputs exponen valores internos del módulo a quien lo invoca. Sin outputs, la raíz no puede leer ningún dato calculado dentro del módulo.
 
-La configuración raíz invoca el módulo con el bloque `module`. Aquí puedes instanciarlo múltiples veces con distintos parámetros.
+### Paso 5: Crear los Directorios de Salida
 
-Crea `main.tf` en la raíz del proyecto:
+```bash
+mkdir -p /root/lab/output/servers
+mkdir -p /root/lab/output/logs
+```
 
-```hcl
+El provider `local` necesita que los directorios destino existan antes de crear los archivos. Si no existen, `terraform apply` falla con un error de permiso de escritura.
+
+### Paso 6: Crear la Configuración Raíz — main.tf
+
+```bash
+touch /root/lab/main.tf
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
 
@@ -143,20 +147,23 @@ module "api_server" {
   port        = 3000
   environment = "dev"
 }
+EOF
 ```
 
-### Paso 6: Exponer Outputs desde la Raíz
+El bloque `module` invoca el módulo local indicado en `source`. Aquí se instancia el mismo módulo dos veces con parámetros distintos, demostrando la reutilización sin duplicar código.
 
-Crea `outputs.tf` en la raíz del proyecto:
+### Paso 7: Crear la Configuración Raíz — outputs.tf
 
-```hcl
+```bash
+touch /root/lab/outputs.tf
+cat > /root/lab/outputs.tf <<'EOF'
 output "web_config_path" {
-  description = "Ruta de configuración del servidor web"
+  description = "Ruta de configuracion del servidor web"
   value       = module.web_server.config_path
 }
 
 output "api_config_path" {
-  description = "Ruta de configuración del servidor API"
+  description = "Ruta de configuracion del servidor API"
   value       = module.api_server.config_path
 }
 
@@ -167,81 +174,75 @@ output "web_info" {
 output "api_info" {
   value = module.api_server.server_info
 }
+EOF
 ```
 
-### Paso 7: Inicializar y Aplicar
+Los outputs de la raíz consumen los outputs del módulo usando la sintaxis `module.<nombre>.<output>`. Esto conecta los valores calculados dentro del módulo con el nivel superior.
+
+### Paso 8: Inicializar Terraform
 
 ```bash
-# Inicializar — Terraform descarga el provider local y registra el módulo
-terraform init
-
-# Ver qué recursos creará
-terraform plan
-
-# Aplicar (crea los archivos de configuración y logs)
-terraform apply -auto-approve
+cd /root/lab && terraform init
 ```
 
-Salida esperada de `apply`:
+`terraform init` descarga el provider `hashicorp/local` y registra el módulo local. Siempre es el primer comando a ejecutar en un proyecto nuevo o tras agregar módulos.
 
-```
-Apply complete! Resources: 4 added, 0 changed, 0 destroyed.
-
-Outputs:
-api_config_path = "./output/servers/api-01.txt"
-api_info        = "api-01 (api) en puerto 3000"
-web_config_path = "./output/servers/web-01.txt"
-web_info        = "web-01 (web) en puerto 8080"
-```
-
-### Paso 8: Inspeccionar el Estado del Módulo
+### Paso 9: Ver el Plan
 
 ```bash
-# Ver todos los recursos, incluidos los del módulo
-terraform state list
-
-# Salida esperada:
-# module.api_server.local_file.server_config
-# module.api_server.local_file.server_log
-# module.web_server.local_file.server_config
-# module.web_server.local_file.server_log
-
-# Ver detalles de un recurso específico del módulo
-terraform state show module.web_server.local_file.server_config
-
-# Ver los outputs generados
-terraform output
+cd /root/lab && terraform plan
 ```
 
-### Paso 9: Ejecutar el Script de Validación
+`terraform plan` muestra los 4 recursos que se crearán (2 por cada instancia del módulo: `server_config` y `server_log`). No modifica nada.
+
+### Paso 10: Aplicar
 
 ```bash
-./validate-lab.sh
+cd /root/lab && terraform apply -auto-approve
 ```
 
-## ✅ Criterios de Validación
+Crea los 4 archivos de configuración y log. La salida debe indicar `4 added, 0 changed, 0 destroyed` y mostrar los outputs con las rutas generadas.
 
-Para completar exitosamente este laboratorio:
+### Paso 11: Inspeccionar el Estado del Módulo
 
-1. ✅ Directorio `modules/` existe con el módulo `web-server`
-2. ✅ El módulo tiene `main.tf`, `variables.tf` y `outputs.tf`
-3. ✅ El `main.tf` raíz invoca el módulo con un bloque `module`
-4. ✅ Terraform inicializado (`.terraform/` presente)
-5. ✅ Estado aplicado (`terraform.tfstate` presente)
-6. ✅ El estado contiene recursos con prefijo `module.`
-7. ✅ Al menos un output definido en el módulo
+```bash
+cd /root/lab && terraform state list
+```
 
-## 🎓 Conceptos Aprendidos
+Muestra todos los recursos en el estado con el prefijo `module.<nombre>`. Esto confirma que Terraform agrupa los recursos por módulo, facilitando la gestión y el troubleshooting.
 
-- ✅ Estructura de un módulo de Terraform (`main.tf`, `variables.tf`, `outputs.tf`)
-- ✅ Cómo invocar un módulo local con `source = "./modules/..."`
-- ✅ Reutilización: múltiples instancias del mismo módulo con distintos parámetros
-- ✅ Cómo los outputs del módulo se consumen en la raíz
-- ✅ `terraform state list` para ver recursos agrupados por módulo
+```bash
+cd /root/lab && terraform output
+```
 
-## 🏆 Badge
+Muestra los valores de los outputs definidos en la raíz, que internamente referencian los outputs del módulo.
 
-Al completar este laboratorio obtienes: **Terraform Modules Básico Badge**
+### Paso 12: Validar el Laboratorio
+
+```bash
+cd /root/lab
+bash validate-lab.sh
+```
+
+---
+
+## Criterios de Validacion
+
+1. Directorio `modules/` existe con el módulo `web-server`
+2. El módulo tiene `main.tf`, `variables.tf` y `outputs.tf`
+3. El `main.tf` raíz invoca el módulo con al menos un bloque `module`
+4. Terraform inicializado (`.terraform/` presente o `terraform.tfstate` existe)
+5. Estado aplicado (`terraform.tfstate` presente)
+6. El estado contiene recursos con prefijo `module.`
+7. Al menos un output definido en el módulo
+
+## Conceptos Aprendidos
+
+- Estructura de un módulo de Terraform (`main.tf`, `variables.tf`, `outputs.tf`)
+- Cómo invocar un módulo local con `source = "./modules/..."`
+- Reutilización: múltiples instancias del mismo módulo con distintos parámetros
+- Cómo los outputs del módulo se consumen en la raíz
+- `terraform state list` para ver recursos agrupados por módulo
 
 ---
 

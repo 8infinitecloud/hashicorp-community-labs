@@ -2,37 +2,54 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Drift_Detection-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Detectar y reconciliar *configuration drift*: cuando la infraestructura real diverge del código Terraform por cambios manuales.
+## Objetivo
+Detectar y reconciliar *configuration drift*: cuando la infraestructura real diverge del codigo Terraform por cambios manuales.
 
-## ⏱️ Duración
+## Duracion
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Labs 1 y 2 del módulo 07 completados
+## Prerrequisitos
+- Labs 1 y 2 del modulo 07 completados
 - Terraform instalado
 
-## 🚀 Instrucciones Paso a Paso
+## Instrucciones Paso a Paso
 
-### Paso 1: Crear la Infraestructura Base
+### Paso 1: Preparar el directorio de trabajo
 
 ```bash
-mkdir lab3-drift-detection
-cd lab3-drift-detection
+mkdir -p /root/lab
+cd /root/lab
+```
+
+```bash
 mkdir -p config scripts
 ```
 
-Crea `main.tf`:
+Separar archivos de configuracion y scripts en subdirectorios facilita la organizacion y refleja una estructura realista de un proyecto.
 
-```hcl
+### Paso 2: Crear la infraestructura base
+
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0"
+    }
+  }
 }
 
 resource "local_file" "app_config" {
   filename = "${path.module}/config/app.conf"
   content  = <<-EOT
-    # Configuración de la aplicación
+    # Configuracion de la aplicacion
     entorno=produccion
     version=2.0
     max_conexiones=100
@@ -42,13 +59,17 @@ resource "local_file" "app_config" {
 
 resource "local_file" "deploy_script" {
   filename        = "${path.module}/scripts/deploy.sh"
-  content         = "#!/bin/bash\necho 'Desplegando versión 2.0'\n"
+  content         = "#!/bin/bash\necho 'Desplegando version 2.0'\n"
   file_permission = "0755"
 }
 
 resource "local_file" "hosts" {
   filename = "${path.module}/config/hosts.txt"
   content  = "web-01 10.0.1.10\nweb-02 10.0.1.11\n"
+
+  lifecycle {
+    ignore_changes = [content]
+  }
 }
 
 output "archivos" {
@@ -58,169 +79,154 @@ output "archivos" {
     local_file.hosts.filename,
   ]
 }
+EOF
 ```
+
+`app_config` y `deploy_script` son gestionados completamente por Terraform. `hosts` usa `lifecycle { ignore_changes = [content] }` para representar un archivo que otra herramienta (como Ansible) puede modificar sin que Terraform lo revierta.
 
 ```bash
 terraform init
+```
+
+```bash
 terraform apply -auto-approve
-
-# Verificar estado inicial
-cat config/app.conf
-terraform plan   # debe mostrar: No changes
 ```
 
-### Paso 2: Introducir Drift Manual
-
 ```bash
-# Simula cambios manuales que alguien hizo fuera de Terraform
-
-# Cambio 1: modificar la configuración de la app
-echo "# MODIFICADO MANUALMENTE" >> config/app.conf
-echo "debug=true" >> config/app.conf
-
-# Cambio 2: modificar el script de despliegue
-echo "echo 'Paso adicional añadido manualmente'" >> scripts/deploy.sh
-
-# Cambio 3: agregar un host no gestionado
-echo "db-01 10.0.2.10" >> config/hosts.txt
-
-echo "=== Cambios manuales aplicados ==="
 cat config/app.conf
 ```
 
-### Paso 3: Detectar el Drift con terraform plan
-
 ```bash
-# Terraform detecta la divergencia comparando state vs realidad
 terraform plan
-
-# Observa:
-# ~ local_file.app_config will be updated in-place (o replaced)
-# ~ local_file.deploy_script will be updated in-place
-# ~ local_file.hosts will be updated in-place
-#
-# Terraform quiere REVERTIR los cambios manuales al estado del código
 ```
 
-### Paso 4: Entender las Opciones de Reconciliación
+El primer `terraform plan` debe mostrar `No changes` — el state coincide exactamente con los archivos en disco.
+
+### Paso 3: Introducir drift manual
 
 ```bash
-cat > opciones-reconciliacion.md << 'EOF'
+printf '\n# MODIFICADO MANUALMENTE\ndebug=true\n' >> config/app.conf
+```
+
+```bash
+printf "echo 'Paso adicional aniadido manualmente'\n" >> scripts/deploy.sh
+```
+
+```bash
+printf 'db-01 10.0.2.10\n' >> config/hosts.txt
+```
+
+Estos comandos simulan cambios manuales hechos directamente en el sistema de archivos, sin pasar por Terraform. En entornos reales esto ocurre cuando alguien edita configuraciones de emergencia directamente en el servidor.
+
+### Paso 4: Detectar el drift con terraform plan
+
+```bash
+terraform plan
+```
+
+Terraform compara el state almacenado con la realidad actual en disco. Los recursos `app_config` y `deploy_script` apareceran como `~ update in-place` porque su contenido cambio. `hosts` no aparecera gracias a `ignore_changes = [content]`.
+
+### Paso 5: Documentar las opciones de reconciliacion
+
+```bash
+touch opciones-reconciliacion.md
+```
+
+```bash
+cat > opciones-reconciliacion.md <<'EOF'
 # Opciones para reconciliar el drift
 
-## Opción 1: Revertir el drift → aceptar el código como fuente de verdad
-```
-terraform apply   # sobreescribe los cambios manuales con el código
-```
-Usar cuando: Los cambios manuales fueron un error o son temporales.
+## Opcion 1: Revertir el drift — el codigo es la fuente de verdad
+Ejecutar terraform apply para sobreescribir los cambios manuales con el codigo.
+Usar cuando: los cambios manuales fueron un error o son temporales.
 
-## Opción 2: Adoptar el drift → actualizar el código para reflejar la realidad
-Editar main.tf para incluir los cambios deseados,
-luego ejecutar terraform apply.
-Usar cuando: Los cambios manuales son válidos y deben mantenerse.
+## Opcion 2: Adoptar el drift — actualizar el codigo para reflejar la realidad
+Editar main.tf para incluir los cambios deseados, luego ejecutar terraform apply.
+Usar cuando: los cambios manuales son validos y deben mantenerse.
 
-## Opción 3: Ignorar cambios específicos → ignore_changes
-```hcl
-resource "local_file" "app_config" {
-  lifecycle {
-    ignore_changes = [content]
-  }
-}
-```
-Usar cuando: Ciertos campos los gestiona otra herramienta (Ansible, etc.)
+## Opcion 3: Ignorar campos especificos — ignore_changes
+Agregar lifecycle { ignore_changes = [campo] } para que Terraform no revierta
+ese campo especifico.
+Usar cuando: otro sistema (Ansible, scripts de init) gestiona ese campo.
+
+## Comandos utiles para diagnostico
+terraform plan               # detecta drift comparando state vs realidad
+terraform plan -refresh-only # solo actualiza el state, no modifica recursos
+terraform state show <recurso>   # inspecciona un recurso del state
 EOF
-
-cat opciones-reconciliacion.md
 ```
 
-### Paso 5: Opción A — Revertir con terraform apply
+Documentar las opciones de reconciliacion ayuda al equipo a elegir la estrategia correcta segun el contexto. La eleccion incorrecta puede resultar en perdida de datos o configuracion invalida.
+
+### Paso 6: Revertir el drift con terraform apply
 
 ```bash
-# Revertir todos los cambios manuales
 terraform apply -auto-approve
-
-# Verificar que el drift fue corregido
-cat config/app.conf   # debe tener solo el contenido original
-terraform plan        # debe mostrar: No changes
-```
-
-### Paso 6: Opción B — Adoptar el Drift con ignore_changes
-
-Actualiza `main.tf` para ignorar cambios en el contenido del archivo de hosts:
-
-```hcl
-resource "local_file" "hosts" {
-  filename = "${path.module}/config/hosts.txt"
-  content  = "web-01 10.0.1.10\nweb-02 10.0.1.11\n"
-
-  lifecycle {
-    ignore_changes = [content]   # Ignora cambios manuales en el contenido
-  }
-}
 ```
 
 ```bash
-# Introducir drift en hosts nuevamente
-echo "db-01 10.0.2.10" >> config/hosts.txt
+cat config/app.conf
+```
 
-# Ahora el plan no detecta cambios en hosts
+```bash
 terraform plan
-
-# El recurso hosts ya no aparece en el plan
 ```
 
-### Paso 7: Terraform refresh — Actualizar el State
+`terraform apply` sobreescribe los cambios manuales con el contenido definido en el codigo. `app.conf` vuelve a su estado original. El segundo `terraform plan` debe mostrar `No changes`.
+
+### Paso 7: Verificar que ignore_changes protege el archivo hosts
 
 ```bash
-# terraform refresh actualiza el state para reflejar la realidad actual
-# (sin modificar la infraestructura)
-# Nota: refresh está integrado en plan/apply desde Terraform 1.x
+printf 'db-01 10.0.2.10\n' >> config/hosts.txt
+```
 
-# Ver el state antes del refresh
-terraform state show local_file.hosts | grep content
+```bash
+terraform plan
+```
 
-# En versiones antiguas: terraform refresh
-# En versiones modernas, el refresh ocurre automáticamente en plan/apply
+```bash
 terraform plan -refresh-only
 ```
 
-### Paso 8: Ejecutar Validación
+El archivo `hosts.txt` tiene contenido diferente al registrado en el state, pero `ignore_changes = [content]` le dice a Terraform que ignore esa diferencia. El plan no muestra cambios para `local_file.hosts`. `terraform plan -refresh-only` actualiza el state para reflejar la realidad sin ejecutar cambios.
+
+### Paso 8: Ejecutar validacion
 
 ```bash
-./validate-lab.sh
+cd /root/lab
 ```
-
-## ✅ Criterios de Validación
-
-1. ✅ Infraestructura creada con estado limpio
-2. ✅ Drift introducido manualmente
-3. ✅ `terraform plan` detecta el drift
-4. ✅ Drift revertido con `terraform apply`
-5. ✅ `ignore_changes` aplicado en al menos un recurso
-
-## 💡 Prevenir el Drift
 
 ```bash
-# Ejecutar terraform plan periódicamente en CI/CD
-# Si hay drift: notificar al equipo
-
-# Ejemplo con GitHub Actions:
-# - name: Check for drift
-#   run: terraform plan -detailed-exitcode
-#   # exit code 2 = hay cambios (drift detectado)
+bash validate-lab.sh
 ```
 
-## 🎓 Conceptos Aprendidos
+## Criterios de Validacion
 
-- ✅ Qué es configuration drift y por qué ocurre
-- ✅ `terraform plan` como herramienta de detección
-- ✅ Opciones de reconciliación: revertir vs adoptar
-- ✅ `ignore_changes` para campos gestionados externamente
-- ✅ `terraform plan -refresh-only` para actualizar el state
+1. Infraestructura creada con estado limpio
+2. Drift introducido manualmente en al menos un recurso
+3. `terraform plan` detecto el drift
+4. Drift revertido con `terraform apply`
+5. `ignore_changes` aplicado en al menos un recurso
+6. `opciones-reconciliacion.md` creado
 
-## 🏆 Badge
+## Prevenir el drift en CI/CD
 
-Al completar este laboratorio obtienes: **Terraform Drift Detection Badge**
+```bash
+# En un pipeline de CI, ejecutar plan periodicamente.
+# El exit code 2 significa que hay cambios (drift detectado).
+terraform plan -detailed-exitcode
+# exit 0 = sin cambios
+# exit 1 = error
+# exit 2 = hay cambios planificados
+```
+
+## Conceptos Aprendidos
+
+- Que es configuration drift y por que ocurre
+- `terraform plan` como herramienta de deteccion
+- Opciones de reconciliacion: revertir vs adoptar vs ignorar
+- `ignore_changes` para campos gestionados externamente
+- `terraform plan -refresh-only` para actualizar el state sin modificar recursos
 
 ---
 

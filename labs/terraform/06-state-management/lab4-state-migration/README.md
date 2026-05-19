@@ -2,33 +2,46 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-State_Migration-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Mover y renombrar recursos dentro del state usando `state mv`, y entender cómo migrar el state entre backends sin recrear infraestructura.
+## Objetivo
 
-## ⏱️ Duración
+Renombrar recursos en el state con `terraform state mv` sin destruir infraestructura, mover un recurso a un modulo en el state, y entender como funciona `terraform init -migrate-state` para cambiar de backend.
+
+## Duracion
+
 30 minutos
 
-## 📋 Prerrequisitos
-- ✅ Labs 1, 2 y 3 del módulo 06 completados
-- Terraform instalado
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Labs 1, 2 y 3 del modulo 06 completados
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear el Proyecto
+## Instrucciones Paso a Paso
+
+### Paso 1: Preparar el directorio de trabajo
 
 ```bash
-mkdir lab4-state-migration
-cd lab4-state-migration
+cd /root/lab
 ```
 
-Crea `main.tf`:
+### Paso 2: Crear main.tf con nombres de recursos "viejos"
 
-```hcl
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
 
-# Recursos con nombres "incorrectos" que vamos a refactorizar
 resource "local_file" "archivo_viejo" {
   filename = "${path.module}/config.txt"
   content  = "version=1.0\nentorno=dev\n"
@@ -41,47 +54,62 @@ resource "local_file" "datos_viejo" {
 
 resource "local_file" "log_viejo" {
   filename = "${path.module}/app.log"
-  content  = "INFO: aplicación iniciada\n"
+  content  = "INFO: aplicacion iniciada\n"
 }
+EOF
 ```
+
+Los recursos tienen el sufijo `_viejo` para simular nombres incorrectos que necesitan refactorizacion. El objetivo es renombrarlos en el state sin destruir los archivos fisicos en disco.
+
+### Paso 3: Inicializar y aplicar
 
 ```bash
 terraform init
-terraform apply -auto-approve
-terraform state list
 ```
-
-### Paso 2: Renombrar Recursos con state mv
 
 ```bash
-# PROBLEMA: Los recursos tienen nombres "_viejo" — queremos renombrarlos
-# sin destruir y recrear los archivos físicos
-
-# Ver el estado actual
-terraform state list
-# local_file.archivo_viejo
-# local_file.datos_viejo
-# local_file.log_viejo
-
-# Mover (renombrar) en el state
-terraform state mv local_file.archivo_viejo local_file.config
-terraform state mv local_file.datos_viejo   local_file.datos
-terraform state mv local_file.log_viejo     local_file.log
-
-# Verificar que los nombres cambiaron
-terraform state list
-# local_file.config
-# local_file.datos
-# local_file.log
+terraform apply -auto-approve
 ```
 
-### Paso 3: Actualizar el Código para que Coincida
+```bash
+terraform state list
+```
 
-Actualiza `main.tf` con los nombres nuevos:
+El state ahora contiene `local_file.archivo_viejo`, `local_file.datos_viejo`, y `local_file.log_viejo`. Los archivos fisicos `config.txt`, `datos.txt`, y `app.log` existen en disco.
 
-```hcl
+### Paso 4: Renombrar recursos con state mv
+
+```bash
+terraform state mv local_file.archivo_viejo local_file.config
+```
+
+```bash
+terraform state mv local_file.datos_viejo local_file.datos
+```
+
+```bash
+terraform state mv local_file.log_viejo local_file.log
+```
+
+```bash
+terraform state list
+```
+
+`terraform state mv` renombra un recurso dentro del state sin tocar los archivos fisicos. Ahora el state muestra `local_file.config`, `local_file.datos`, `local_file.log`. Si ejecutaras `terraform plan` en este momento, Terraform querria destruir los recursos con nombres viejos porque el codigo aun los referencia — por eso el siguiente paso actualiza el codigo.
+
+### Paso 5: Actualizar main.tf para que coincida con el state
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
 
 resource "local_file" "config" {
@@ -96,42 +124,64 @@ resource "local_file" "datos" {
 
 resource "local_file" "log" {
   filename = "${path.module}/app.log"
-  content  = "INFO: aplicación iniciada\n"
+  content  = "INFO: aplicacion iniciada\n"
 }
+EOF
 ```
 
+Ahora los nombres en el codigo (`local_file.config`, etc.) coinciden con los nombres en el state. El flujo correcto es siempre: primero `state mv`, luego actualizar el codigo. Si lo haces al reves, Terraform planea destruir y recrear.
+
+### Paso 6: Verificar que plan muestra "No changes"
+
 ```bash
-# Plan debe mostrar: No changes
-# Si hay cambios, el state mv fue incorrecto
 terraform plan
-
-# Si no hay cambios, aplicar para confirmar
-terraform apply -auto-approve
 ```
 
-### Paso 4: Mover un Recurso a un Módulo
+`terraform plan` debe mostrar "No changes. Your infrastructure matches the configuration." Esto confirma que el state mv fue exitoso: el state y el codigo son consistentes sin haber destruido ni recreado ningun archivo.
 
-Crea `modulos/archivos/main.tf`:
+### Paso 7: Crear el modulo de destino
 
 ```bash
-mkdir -p modulos/archivos
+mkdir -p modules/archivos
 ```
 
-```hcl
-# modulos/archivos/main.tf
-variable "prefix" { type = string }
+```bash
+touch modules/archivos/main.tf
+```
+
+```bash
+cat > modules/archivos/main.tf <<'EOF'
+variable "prefix" {
+  type    = string
+  default = "app"
+}
 
 resource "local_file" "log" {
   filename = "${path.module}/output/${var.prefix}-app.log"
-  content  = "INFO: log gestionado por módulo\n"
+  content  = "INFO: log gestionado por modulo\n"
 }
+EOF
 ```
 
-Actualiza el root `main.tf` para usar el módulo:
+```bash
+mkdir -p modules/archivos/output
+```
 
-```hcl
+El modulo `modules/archivos` encapsula la gestion del log. Crear el directorio `output/` dentro del modulo es necesario porque `local_file` no crea directorios intermedios automaticamente.
+
+### Paso 8: Actualizar el root main.tf para usar el modulo
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
 
 resource "local_file" "config" {
@@ -145,94 +195,108 @@ resource "local_file" "datos" {
 }
 
 module "archivos" {
-  source = "./modulos/archivos"
+  source = "./modules/archivos"
   prefix = "dev"
 }
+EOF
+```
+
+El recurso `local_file.log` se elimina del root y ahora vive dentro de `module.archivos`. Antes de hacer el `state mv` al modulo, hay que hacer `terraform init` para registrar el nuevo modulo.
+
+### Paso 9: Re-inicializar por el nuevo modulo
+
+```bash
+terraform init
+```
+
+`terraform init` es necesario siempre que se agrega un nuevo `module` o `provider`. Sin este paso, Terraform no conoce la ruta del modulo y el `state mv` fallaria.
+
+### Paso 10: Mover el recurso log al modulo en el state
+
+```bash
+terraform state mv local_file.log module.archivos.local_file.log
 ```
 
 ```bash
-mkdir -p modulos/archivos/output
-terraform init   # re-init por nuevo módulo
-
-# Mover el recurso local al módulo en el state
-terraform state mv local_file.log module.archivos.local_file.log
-
-# Verificar
 terraform state list
+```
 
-# Plan debe ser: No changes (o crear el archivo en nueva ubicación)
-terraform plan
+`terraform state mv` puede mover recursos no solo entre nombres sino tambien entre el root y un modulo. La sintaxis de destino `module.archivos.local_file.log` usa el nombre del bloque `module` en el root seguido del address del recurso dentro del modulo.
+
+### Paso 11: Verificar integridad con plan
+
+```bash
 terraform apply -auto-approve
 ```
 
-### Paso 5: Simular Migración de Backend
-
 ```bash
-# Paso 5a: Respaldar el state actual
-cp terraform.tfstate terraform.tfstate.pre-migracion
-echo "State respaldado"
-
-# Paso 5b: En un escenario real, cambiarías backend.tf
-# y ejecutarías: terraform init -migrate-state
-# Terraform pregunta: "Do you want to copy existing state to the new backend?"
-
-# Para simular la pregunta:
-echo "En migración real ejecutarías:"
-echo "  terraform init -migrate-state"
-echo "  > Do you want to copy existing state to the new backend? (yes/no)"
-echo "  > yes"
-echo "  Terraform copia el state al nuevo backend y borra el local"
-
-# Paso 5c: Verificar integridad post-migración
-terraform plan   # debe mostrar: No changes
-```
-
-### Paso 6: Ejecutar Validación
-
-```bash
-./validate-lab.sh
-```
-
-## ✅ Criterios de Validación
-
-1. ✅ `state mv` ejecutado para renombrar recursos
-2. ✅ `terraform plan` muestra "No changes" después del mv
-3. ✅ Recurso movido al módulo en el state
-4. ✅ State respaldado antes de la migración
-5. ✅ Integridad del state verificada con `terraform plan`
-
-## 🔧 Troubleshooting
-
-### Error: "Source address not found in state"
-
-```bash
-# Verifica el nombre exacto del recurso
 terraform state list
-# Usa el nombre exacto que aparece ahí
 ```
 
-### Plan muestra recreación después de state mv
+El apply confirma que el state y el codigo son consistentes. El state debe mostrar `local_file.config`, `local_file.datos`, y `module.archivos.local_file.log`. Los archivos fisicos no fueron destruidos ni recreados en ningun momento del proceso.
+
+### Paso 12: Respaldar el state y documentar la migracion de backend
 
 ```bash
-# El código y el state no coinciden
-# Verifica que main.tf usa el nombre nuevo
-terraform state show local_file.config
-# Compara con el resource en main.tf
+cp terraform.tfstate terraform.tfstate.pre-migracion
 ```
 
-## 🎓 Conceptos Aprendidos
+```bash
+touch migracion-backend.md
+```
 
-- ✅ `terraform state mv` para renombrar sin recrear
-- ✅ `terraform state mv` para mover recursos a módulos
-- ✅ Proceso de migración de backend (`init -migrate-state`)
-- ✅ Validar integridad con `terraform plan` (No changes)
-- ✅ Importancia de respaldar el state antes de operaciones
+```bash
+cat > migracion-backend.md <<'EOF'
+# Proceso de Migracion de Backend
 
-## 🏆 Badge
+## Cuando necesitas migrar el backend
+- Pasar de state local a S3 (primer despliegue en equipo)
+- Cambiar de region o bucket S3
+- Mover de un cloud a otro
 
-Al completar este laboratorio obtienes: **Terraform State Migration Badge**
+## Pasos para migrar de local a S3
+1. Respaldar el state actual: cp terraform.tfstate terraform.tfstate.backup
+2. Agregar bloque backend en main.tf o backend.tf:
+   terraform { backend "s3" { bucket = "..." key = "..." region = "..." } }
+3. Ejecutar: terraform init -migrate-state
+   Terraform pregunta: "Do you want to copy existing state to the new backend? (yes)"
+4. Verificar: terraform state list (debe mostrar los mismos recursos)
+5. Verificar: terraform plan (debe mostrar No changes)
+
+## Notas importantes
+- Nunca borrar terraform.tfstate local hasta confirmar que el remote tiene el state
+- Si algo falla, restaurar desde el backup y quitar el bloque backend
+EOF
+```
+
+Respaldar el state antes de cualquier operacion de migracion es un habito critico. Si la migracion falla a mitad, el backup local permite restaurar sin perder el historial de recursos gestionados.
+
+### Paso 13: Ejecutar validacion
+
+```bash
+cd /root/lab && bash validate-lab.sh
+```
+
+## Criterios de Validacion
+
+1. Terraform inicializado (`.terraform/` presente)
+2. `terraform.tfstate` existe
+3. El state NO contiene recursos con sufijo `_viejo`
+4. El state contiene `module.archivos`
+5. `terraform plan` muestra "No changes"
+6. `local_file.config` esta en el state con nombre correcto
+7. `migracion-backend.md` creado
+
+## Conceptos Aprendidos
+
+- `terraform state mv` para renombrar sin destruir recursos
+- `terraform state mv` para mover recursos a modulos
+- Por que hay que actualizar el codigo despues del `state mv`
+- Proceso de migracion de backend (`init -migrate-state`)
+- Validar integridad con `terraform plan` (No changes)
+- Importancia de respaldar el state antes de operaciones
 
 ---
 
 **Anterior:** [Lab 3 - Workspaces](../lab3-workspaces/)
-**Siguiente:** [Módulo 07 - Maintain Infrastructure](../../07-maintain-infrastructure/)
+**Siguiente:** [Modulo 07 - Maintain Infrastructure](../../07-maintain-infrastructure/)

@@ -2,68 +2,71 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Modules_Advanced-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Implementar módulos con `count`, `for_each` y `dynamic blocks` para crear configuraciones reutilizables y escalables.
+## Objetivo
 
-## ⏱️ Duración
+Implementar módulos con `for_each` y variables de tipo `map(object(...))` para crear recursos escalables. Usar `validation` blocks para rechazar entradas inválidas antes de planificar.
+
+## Duración
+
 35 minutos
 
-## 📋 Prerrequisitos
-- ✅ Labs 1 y 2 del módulo 05 completados
-- Terraform instalado
-- Conceptos de for expressions (Módulo 04)
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Labs 1 y 2 del módulo 05 completados
+- Terraform instalado
+- Conceptos de `for` expressions (Módulo 04)
+
+## Instrucciones Paso a Paso
 
 ### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-mkdir lab3-modulos-avanzados
-cd lab3-modulos-avanzados
-mkdir -p modules/servidor
+mkdir -p /root/lab/modules/servidor
+mkdir -p /root/lab/modules/servidor/output
 ```
 
-### Paso 2: Módulo con Variable de Tipo Object
+El módulo `servidor` recibirá un mapa de servidores y creará un archivo de configuración por cada uno usando `for_each`. Los archivos de salida van al subdirectorio `output/` del módulo.
 
-Crea `modules/servidor/main.tf`:
+### Paso 2: Crear el Módulo — variables.tf
 
-```hcl
-# modules/servidor/main.tf
-
+```bash
+touch /root/lab/modules/servidor/variables.tf
+cat > /root/lab/modules/servidor/variables.tf <<'EOF'
 variable "servidores" {
+  description = "Mapa de servidores a configurar"
   type = map(object({
     entorno  = string
     puerto   = number
     replicas = number
   }))
+
+  validation {
+    condition     = length(var.servidores) > 0
+    error_message = "Debes definir al menos un servidor en el mapa."
+  }
 }
 
 variable "prefijo" {
-  type    = string
-  default = "app"
+  description = "Prefijo para nombres de recursos"
+  type        = string
+  default     = "app"
 }
 
-# Usar for_each para crear un archivo de config por servidor
-resource "local_file" "config" {
-  for_each = var.servidores
-
-  filename = "${path.module}/output/${each.key}.conf"
-  content  = <<-EOT
-    # Servidor: ${each.key}
-    entorno  = ${each.value.entorno}
-    puerto   = ${each.value.puerto}
-    replicas = ${each.value.replicas}
-  EOT
+variable "etiquetas" {
+  description = "Lista de etiquetas a incluir en el inventario"
+  type        = list(string)
+  default     = []
 }
-
-output "configs_creadas" {
-  value = [for k, v in local_file.config : v.filename]
-}
+EOF
 ```
 
-Crea `modules/servidor/versions.tf`:
+`map(object(...))` permite pasar una estructura tipada de clave-valor al módulo. El bloque `validation` rechaza un mapa vacío antes de crear cualquier recurso, evitando estados inconsistentes.
 
-```hcl
+### Paso 3: Crear el Módulo — main.tf
+
+```bash
+touch /root/lab/modules/servidor/main.tf
+cat > /root/lab/modules/servidor/main.tf <<'EOF'
 terraform {
   required_providers {
     local = {
@@ -72,45 +75,63 @@ terraform {
     }
   }
 }
-```
 
-### Paso 3: Dynamic Blocks en el Módulo
+resource "local_file" "config" {
+  for_each = var.servidores
 
-Crea `modules/servidor/dynamic.tf`:
-
-```hcl
-# modules/servidor/dynamic.tf
-# Genera un archivo de inventario con dynamic blocks
-
-variable "etiquetas" {
-  type    = list(string)
-  default = []
+  filename = "${path.module}/output/${each.key}.conf"
+  content  = <<-EOT
+    # Servidor: ${each.key}
+    prefijo   = ${var.prefijo}
+    entorno   = ${each.value.entorno}
+    puerto    = ${each.value.puerto}
+    replicas  = ${each.value.replicas}
+  EOT
 }
 
 resource "local_file" "inventario" {
   filename = "${path.module}/output/inventario.txt"
   content  = <<-EOT
     # Inventario de Servidores
-    # Generado automáticamente con Terraform
+    # Prefijo: ${var.prefijo}
 
     ${join("\n", [
       for nombre, srv in var.servidores :
-      "[${nombre}]\nentorno=${srv.entorno}\npuerto=${srv.puerto}\nreplicas=${srv.replicas}"
+      "[${nombre}] entorno=${srv.entorno} puerto=${srv.puerto} replicas=${srv.replicas}"
     ])}
 
-    # Etiquetas aplicadas:
-    ${length(var.etiquetas) > 0 ? join(", ", var.etiquetas) : "ninguna"}
+    # Etiquetas: ${length(var.etiquetas) > 0 ? join(", ", var.etiquetas) : "ninguna"}
   EOT
 }
+EOF
 ```
 
-### Paso 4: Root Module con for_each
+`for_each = var.servidores` crea un recurso `local_file.config` por cada entrada del mapa. `each.key` es el nombre del servidor y `each.value` contiene sus atributos. El recurso `inventario` usa un `for` expression para construir una línea por servidor.
 
-Crea `main.tf` en la raíz:
+### Paso 4: Crear el Módulo — outputs.tf
 
-```hcl
-# main.tf
+```bash
+touch /root/lab/modules/servidor/outputs.tf
+cat > /root/lab/modules/servidor/outputs.tf <<'EOF'
+output "configs_creadas" {
+  description = "Lista de rutas de archivos de configuracion generados"
+  value       = [for k, v in local_file.config : v.filename]
+}
 
+output "inventario_path" {
+  description = "Ruta del archivo de inventario"
+  value       = local_file.inventario.filename
+}
+EOF
+```
+
+El output `configs_creadas` usa un `for` expression para transformar el mapa de recursos en una lista de rutas. La raíz puede iterar esta lista para procesamiento adicional o para mostrarla en CI/CD.
+
+### Paso 5: Crear la Configuración Raíz — main.tf
+
+```bash
+touch /root/lab/main.tf
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
 }
@@ -146,94 +167,109 @@ module "infra" {
 output "configs" {
   value = module.infra.configs_creadas
 }
+
+output "inventario" {
+  value = module.infra.inventario_path
+}
+EOF
 ```
 
-Ejecuta:
+El `local.servidores` define el mapa de servidores en la raíz y lo pasa al módulo. Centralizar los datos en `locals` facilita modificar un servidor sin tocar la definición del módulo.
+
+### Paso 6: Inicializar Terraform
 
 ```bash
-# Crear directorio de output del módulo
-mkdir -p modules/servidor/output
-
-# Inicializar
-terraform init
-
-# Planificar — observa los recursos que se crearán por for_each
-terraform plan
-
-# Aplicar
-terraform apply -auto-approve
-
-# Ver configuraciones generadas
-cat modules/servidor/output/web-prod.conf
-cat modules/servidor/output/inventario.txt
-
-# Ver outputs
-terraform output configs
+cd /root/lab && terraform init
 ```
 
-### Paso 5: Modificar un Servidor y Observar el Diff
+`terraform init` descarga el provider `hashicorp/local` y registra el módulo local en `.terraform/`. Ejecutar siempre después de agregar un módulo nuevo o modificar su `source`.
+
+### Paso 7: Ver el Plan
 
 ```bash
-# Edita main.tf: cambia replicas de web-dev de 1 a 2
-# Luego observa qué cambia
-terraform plan
-
-# Solo afecta el recurso modificado, no los demás
-terraform apply -auto-approve
+cd /root/lab && terraform plan
 ```
 
-### Paso 6: Agregar un Nuevo Servidor
+El plan muestra 4 recursos: un `local_file.config` por cada uno de los 3 servidores del mapa, más el `local_file.inventario`. Observa cómo los nombres de recursos incluyen la clave del mapa (`web-prod`, `web-dev`, `api-prod`).
+
+### Paso 8: Aplicar
 
 ```bash
-# Añade en locals.servidores:
-#   "db-prod" = { entorno = "produccion", puerto = 5432, replicas = 2 }
-# Terraform debe crear solo ese recurso nuevo
-terraform plan
-terraform apply -auto-approve
+cd /root/lab && terraform apply -auto-approve
 ```
 
-### Paso 7: Ejecutar Validación
+Crea los 4 archivos. La ventaja de `for_each` sobre `count` es que agregar o eliminar un servidor solo afecta ese recurso específico, sin re-crear los demás.
+
+### Paso 9: Verificar los Archivos Generados
 
 ```bash
-cd ../..
-./validate-lab.sh
+cat /root/lab/modules/servidor/output/web-prod.conf
 ```
 
-## ✅ Criterios de Validación
-
-1. ✅ Módulo usa `for_each` con tipo `map(object(...))`
-2. ✅ Se generan configs individuales por servidor
-3. ✅ Archivo de inventario creado con contenido correcto
-4. ✅ Modificar un servidor no afecta a los demás
-5. ✅ Agregar un servidor solo crea recursos nuevos
-
-## 🔧 Troubleshooting
-
-### Error: "The map has no element with the key"
+Muestra la configuración del servidor `web-prod`. Cada archivo tiene el nombre del servidor como key del mapa, lo que facilita la trazabilidad.
 
 ```bash
-# Verifica que el map no esté vacío
-terraform console
-> local.servidores
+cat /root/lab/modules/servidor/output/inventario.txt
 ```
 
-### Error al crear output/
+Muestra el inventario completo generado dinámicamente con `join` y un `for` expression. Este patrón simula la generación de archivos de inventario para Ansible u otras herramientas.
+
+### Paso 10: Ver el Estado del Módulo
 
 ```bash
-mkdir -p modules/servidor/output
+cd /root/lab && terraform state list
 ```
 
-## 🎓 Conceptos Aprendidos
+Muestra los recursos agrupados bajo `module.infra`, con el sufijo `["web-prod"]`, `["web-dev"]` etc. — el `for_each` crea instancias indexadas por la clave del mapa, no por número.
 
-- ✅ `for_each` con `map(object(...))` en módulos
-- ✅ `each.key` y `each.value` dentro del módulo
-- ✅ Outputs con `for` expressions
-- ✅ Modificaciones aisladas con `for_each` (vs `count`)
-- ✅ Dynamic content con `join` y heredoc
+### Paso 11: Agregar un Servidor y Observar el Diff
 
-## 🏆 Badge
+```bash
+cat >> /root/lab/main.tf <<'EOF'
 
-Al completar este laboratorio obtienes: **Terraform Advanced Modules Badge**
+# Servidor adicional — agrega al bloque locals manualmente si prefieres
+EOF
+```
+
+Edita `/root/lab/main.tf` y agrega `"db-prod" = { entorno = "produccion", puerto = 5432, replicas = 2 }` dentro de `local.servidores`. Luego ejecuta:
+
+```bash
+cd /root/lab && terraform plan
+```
+
+El plan muestra solo 2 recursos nuevos (`local_file.config["db-prod"]` y la actualización de `inventario.txt`), sin tocar `web-prod` ni `web-dev`. Esta es la ventaja principal de `for_each`.
+
+```bash
+cd /root/lab && terraform apply -auto-approve
+```
+
+Aplica solo los cambios necesarios. Los recursos existentes no se destruyen ni re-crean.
+
+### Paso 12: Validar el Laboratorio
+
+```bash
+cd /root/lab
+bash validate-lab.sh
+```
+
+---
+
+## Criterios de Validacion
+
+1. Módulo `modules/servidor/` existe con `main.tf`, `variables.tf` y `outputs.tf`
+2. El módulo usa `for_each` con tipo `map(object(...))`
+3. Variables del módulo incluyen un bloque `validation`
+4. Terraform inicializado y estado aplicado
+5. Archivos de configuración generados por `for_each`
+6. El estado contiene múltiples instancias del módulo
+
+## Conceptos Aprendidos
+
+- `for_each` con `map(object(...))` en recursos dentro de módulos
+- `each.key` y `each.value` para acceder a datos del mapa
+- Bloque `validation` en variables para rechazar entradas inválidas
+- `for` expressions en outputs para transformar mapas en listas
+- Modificaciones aisladas con `for_each`: solo cambia el recurso afectado
 
 ---
 

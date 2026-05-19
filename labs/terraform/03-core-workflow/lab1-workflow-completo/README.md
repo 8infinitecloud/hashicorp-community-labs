@@ -1,506 +1,254 @@
-# Lab 1: Workflow Completo con AWS
+# Lab 1: Workflow Completo de Terraform
 
 ![Terraform](https://img.shields.io/badge/Terraform-Workflow-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Ejecutar el workflow completo de Terraform creando infraestructura real en AWS.
+## Objetivo
 
-## ⏱️ Duración
-45 minutos
+Ejecutar el ciclo completo de Terraform (Write → Init → Validate → Plan → Apply → Modify → Destroy) usando el provider `local` para crear y gestionar archivos de configuración, observando cómo el state captura cada cambio a lo largo del proceso.
 
-## 📋 Prerrequisitos
-- ✅ Módulos 1 y 2 completados
-- Cuenta de AWS (Free Tier)
-- AWS CLI configurado con credenciales
-- Terraform instalado
+## Duración
 
-## ⚠️ Advertencia Importante
+30 minutos
 
-Este lab crea recursos reales en AWS. Aunque usa Free Tier:
-- Puede generar costos mínimos si se deja corriendo
-- **IMPORTANTE:** Ejecuta `terraform destroy` al finalizar
-- Verifica en AWS Console que los recursos se eliminaron
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Módulos 1 y 2 completados
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Verificar Credenciales AWS
+## Instrucciones Paso a Paso
+
+### Paso 1: Crear la Estructura del Proyecto
 
 ```bash
-# Verificar que AWS CLI está configurado
-aws sts get-caller-identity
-
-# Debe mostrar tu Account ID, User ID y ARN
-# Si falla, configura con: aws configure
+mkdir -p /root/lab
 ```
 
-### Paso 2: Crear el Directorio del Proyecto
+El directorio `/root/lab` será el espacio de trabajo de este lab. Todos los archivos `.tf` y el estado local se almacenarán aquí.
+
+### Paso 2: Crear el archivo main.tf
 
 ```bash
-mkdir lab3-workflow
-cd lab3-workflow
+touch /root/lab/main.tf
 ```
 
-### Paso 3: Crear el Archivo main.tf
+Crear el archivo vacío primero permite verificar que el directorio existe y es escribible antes de volcas contenido en él.
 
-```hcl
-# main.tf - Infraestructura web simple en AWS
-
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
     }
   }
 }
 
-provider "aws" {
-  region = "us-east-1"
-  
-  default_tags {
-    tags = {
-      Project     = "TerraformBootcamp"
-      Environment = "lab"
-      ManagedBy   = "Terraform"
-      Country     = "Peru"
+# Archivo de configuración del servidor web
+resource "local_file" "web_config" {
+  filename = "/root/lab/output/web.conf"
+  content  = <<-EOT
+    [server]
+    host     = "0.0.0.0"
+    port     = 8080
+    env      = "development"
+    managed  = "terraform"
+  EOT
+}
+
+# Archivo de registro del proyecto
+resource "local_file" "project_readme" {
+  filename = "/root/lab/output/PROJECT.md"
+  content  = <<-EOT
+    # Proyecto Terraform
+
+    Gestionado con Terraform.
+    Archivo: ${local_file.web_config.filename}
+  EOT
+}
+
+output "web_config_path" {
+  description = "Ruta del archivo de configuracion web"
+  value       = local_file.web_config.filename
+}
+
+output "project_readme_path" {
+  description = "Ruta del README del proyecto"
+  value       = local_file.project_readme.filename
+}
+EOF
+```
+
+Este archivo declara dos recursos `local_file` con una dependencia implícita: `project_readme` referencia el atributo `filename` de `web_config`, por lo que Terraform creará `web_config` primero. Los `output` exponen rutas útiles tras el apply.
+
+### Paso 3: INIT — Inicializar el Directorio de Trabajo
+
+```bash
+terraform -chdir=/root/lab init
+```
+
+`terraform init` descarga el provider `hashicorp/local`, crea el directorio `.terraform/` y genera el archivo de bloqueo `.terraform.lock.hcl`. Debe ejecutarse al menos una vez antes de cualquier otra operación.
+
+### Paso 4: VALIDATE — Validar la Sintaxis
+
+```bash
+terraform -chdir=/root/lab validate
+```
+
+`terraform validate` comprueba que la configuración HCL es sintácticamente correcta y que las referencias entre recursos son coherentes. No hace llamadas a la API del provider ni necesita credenciales.
+
+### Paso 5: FORMAT — Formatear el Código
+
+```bash
+terraform -chdir=/root/lab fmt
+```
+
+`terraform fmt` reescribe los archivos `.tf` aplicando el estilo canónico de HashiCorp: alineación de `=`, indentación con dos espacios y ordenamiento de bloques. Ejecutarlo antes de cada commit mantiene la coherencia del repositorio.
+
+### Paso 6: PLAN — Previsualizar los Cambios
+
+```bash
+terraform -chdir=/root/lab plan
+```
+
+`terraform plan` compara la configuración deseada contra el estado actual y muestra exactamente qué recursos se crearán, modificarán o destruirán. La línea `Plan: 2 to add` confirma que se crearán los dos archivos sin afectar nada existente.
+
+### Paso 7: Guardar el Plan en un Archivo
+
+```bash
+terraform -chdir=/root/lab plan -out=/root/lab/tfplan
+```
+
+Guardar el plan en un archivo binario garantiza que el `apply` subsiguiente ejecute exactamente lo que fue revisado, sin que cambios de última hora en la configuración alteren el resultado.
+
+### Paso 8: APPLY — Aplicar el Plan
+
+```bash
+terraform -chdir=/root/lab apply /root/lab/tfplan
+```
+
+`terraform apply` ejecuta el plan guardado: crea los dos archivos en disco y actualiza el state file (`terraform.tfstate`) con los atributos reales de cada recurso. No se solicita confirmación porque se aplica un plan previamente aprobado.
+
+### Paso 9: VERIFY — Inspeccionar el Estado y los Outputs
+
+```bash
+terraform -chdir=/root/lab output
+```
+
+`terraform output` imprime los valores definidos en los bloques `output` del state actual. Usar outputs en lugar de `cat` directo sobre el state es la práctica recomendada para exponer información a otros sistemas o scripts.
+
+```bash
+terraform -chdir=/root/lab state list
+```
+
+`terraform state list` enumera todos los recursos gestionados. Tras el apply deben aparecer `local_file.project_readme` y `local_file.web_config`.
+
+### Paso 10: MODIFY — Modificar un Recurso y Volver a Planear
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
     }
   }
 }
 
-# Security Group para permitir HTTP
-resource "aws_security_group" "web" {
-  name        = "lab3-web-sg"
-  description = "Security group para servidor web"
-  
-  ingress {
-    description = "HTTP from anywhere"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  
-  ingress {
-    description = "SSH from anywhere"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  
-  egress {
-    description = "Allow all outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  
-  tags = {
-    Name = "lab3-web-sg"
-  }
+# Archivo de configuración del servidor web (actualizado)
+resource "local_file" "web_config" {
+  filename = "/root/lab/output/web.conf"
+  content  = <<-EOT
+    [server]
+    host     = "0.0.0.0"
+    port     = 9090
+    env      = "staging"
+    managed  = "terraform"
+  EOT
 }
 
-# Instancia EC2 con servidor web
-resource "aws_instance" "web" {
-  ami           = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2
-  instance_type = "t2.micro"  # Free tier eligible
-  
-  vpc_security_group_ids = [aws_security_group.web.id]
-  
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y httpd
-              systemctl start httpd
-              systemctl enable httpd
-              
-              cat > /var/www/html/index.html << 'HTML'
-              <!DOCTYPE html>
-              <html>
-              <head>
-                  <title>Peru HUG - Terraform Lab</title>
-                  <style>
-                      body {
-                          font-family: Arial, sans-serif;
-                          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                          color: white;
-                          display: flex;
-                          justify-content: center;
-                          align-items: center;
-                          height: 100vh;
-                          margin: 0;
-                      }
-                      .container {
-                          text-align: center;
-                          background: rgba(0,0,0,0.3);
-                          padding: 3rem;
-                          border-radius: 10px;
-                      }
-                      h1 { font-size: 3rem; margin: 0; }
-                      p { font-size: 1.5rem; }
-                  </style>
-              </head>
-              <body>
-                  <div class="container">
-                      <h1>🚀 Terraform Lab 3</h1>
-                      <p>Servidor desplegado con Terraform</p>
-                      <p>Peru HUG Bootcamp</p>
-                  </div>
-              </body>
-              </html>
-              HTML
-              EOF
-  
-  tags = {
-    Name = "lab3-web-server"
-  }
+# Archivo de registro del proyecto
+resource "local_file" "project_readme" {
+  filename = "/root/lab/output/PROJECT.md"
+  content  = <<-EOT
+    # Proyecto Terraform
+
+    Gestionado con Terraform.
+    Archivo: ${local_file.web_config.filename}
+  EOT
 }
 
-# Outputs
-output "instance_id" {
-  description = "ID de la instancia EC2"
-  value       = aws_instance.web.id
+output "web_config_path" {
+  description = "Ruta del archivo de configuracion web"
+  value       = local_file.web_config.filename
 }
 
-output "public_ip" {
-  description = "IP pública de la instancia"
-  value       = aws_instance.web.public_ip
+output "project_readme_path" {
+  description = "Ruta del README del proyecto"
+  value       = local_file.project_readme.filename
 }
-
-output "security_group_id" {
-  description = "ID del security group"
-  value       = aws_security_group.web.id
-}
-
-output "web_url" {
-  description = "URL del servidor web"
-  value       = "http://${aws_instance.web.public_ip}"
-}
+EOF
 ```
 
-### Paso 4: WRITE - Revisar la Configuración
+El puerto cambia de `8080` a `9090` y el entorno de `development` a `staging`. Modificar el contenido de un `local_file` obliga a Terraform a recrear el recurso porque el hash del contenido cambia.
 
 ```bash
-# Ver el contenido del archivo
-cat main.tf
-
-# Verificar sintaxis básica
-terraform fmt -check
+terraform -chdir=/root/lab plan
 ```
 
-### Paso 5: INIT - Inicializar
+El plan mostrará `~ local_file.web_config` con el símbolo `-/+` indicando destrucción y recreación. Revisar el plan antes de aplicar es fundamental para evitar sorpresas en entornos reales.
+
+### Paso 11: Aplicar la Modificación
 
 ```bash
-# Inicializar el directorio de trabajo
-terraform init
-
-# Observa:
-# - Descarga del provider AWS
-# - Creación de .terraform/
-# - Creación de .terraform.lock.hcl
-
-# Ver providers instalados
-terraform providers
+terraform -chdir=/root/lab apply -auto-approve
 ```
 
-### Paso 6: VALIDATE - Validar
+`-auto-approve` omite la confirmación interactiva. Es aceptable en este lab de aprendizaje; en producción siempre se recomienda revisar y confirmar explícitamente.
+
+### Paso 12: DESTROY — Destruir Todos los Recursos
 
 ```bash
-# Validar la configuración
-terraform validate
-
-# Output esperado:
-# Success! The configuration is valid.
+terraform -chdir=/root/lab destroy -auto-approve
 ```
 
-### Paso 7: FORMAT - Formatear
+`terraform destroy` elimina todos los recursos gestionados en el state y lo deja vacío. Ejecutar destroy al finalizar un lab evita acumular archivos o costos residuales en entornos cloud reales.
+
+### Paso 13: Ejecutar la Validación del Lab
 
 ```bash
-# Formatear el código
-terraform fmt
-
-# Verificar formato
-terraform fmt -check
+cd /root/lab
 ```
-
-### Paso 8: PLAN - Planear
 
 ```bash
-# Ver qué se va a crear
-terraform plan
-
-# Observa la salida:
-# Plan: 2 to add, 0 to change, 0 to destroy.
-# 
-# + aws_security_group.web
-# + aws_instance.web
-
-# Guardar el plan
-terraform plan -out=tfplan
-
-# Revisar plan guardado
-terraform show tfplan
+bash validate-lab.sh
 ```
 
-### Paso 9: APPLY - Aplicar
+El script verifica que Terraform está instalado, que el directorio fue inicializado, que `main.tf` contiene los recursos esperados y que el workflow fue ejecutado correctamente.
 
-```bash
-# Aplicar el plan guardado
-terraform apply tfplan
+## Conceptos Clave
 
-# O aplicar directamente (con confirmación)
-# terraform apply
-
-# Espera ~1-2 minutos mientras se crea la infraestructura
-
-# Output esperado:
-# Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
-# 
-# Outputs:
-# instance_id = "i-abc123..."
-# public_ip = "54.123.45.67"
-# security_group_id = "sg-xyz789..."
-# web_url = "http://54.123.45.67"
-```
-
-### Paso 10: VERIFY - Verificar
-
-```bash
-# Ver el estado
-terraform show
-
-# Ver outputs
-terraform output
-
-# Ver URL del servidor
-terraform output web_url
-
-# Probar el servidor web (espera 1-2 minutos para que inicie)
-curl $(terraform output -raw web_url)
-
-# O abre en el navegador
-open $(terraform output -raw web_url)  # macOS
-xdg-open $(terraform output -raw web_url)  # Linux
-```
-
-### Paso 11: MODIFY - Modificar
-
-Edita `main.tf` y cambia el `instance_type`:
-
-```hcl
-resource "aws_instance" "web" {
-  ami           = "ami-0c55b159cbfafe1f0"
-  instance_type = "t2.small"  # Cambiar de t2.micro a t2.small
-  # ...
-}
-```
-
-Luego:
-
-```bash
-# Ver las diferencias
-terraform plan
-
-# Output:
-# ~ aws_instance.web will be updated in-place
-#   ~ instance_type = "t2.micro" -> "t2.small"
-
-# Aplicar el cambio
-terraform apply -auto-approve
-
-# Verificar el cambio
-terraform state show aws_instance.web | grep instance_type
-```
-
-### Paso 12: INSPECT - Inspeccionar
-
-```bash
-# Listar recursos
-terraform state list
-
-# Output:
-# aws_instance.web
-# aws_security_group.web
-
-# Ver detalles de un recurso
-terraform state show aws_instance.web
-
-# Ver el grafo de dependencias
-terraform graph
-
-# Generar imagen del grafo (requiere graphviz)
-terraform graph | dot -Tpng > graph.png
-```
-
-### Paso 13: DESTROY - Destruir (IMPORTANTE)
-
-```bash
-# Ver qué se va a destruir
-terraform plan -destroy
-
-# Destruir todos los recursos
-terraform destroy
-
-# Confirma con: yes
-
-# Output:
-# Destroy complete! Resources: 2 destroyed.
-
-# Verificar que se eliminaron
-terraform state list
-# (debe estar vacío)
-```
-
-### Paso 14: Verificar en AWS Console
-
-```bash
-# Abrir AWS Console y verificar:
-# 1. EC2 > Instances (no debe haber instancias lab3-web-server)
-# 2. EC2 > Security Groups (no debe haber lab3-web-sg)
-
-# O verificar con AWS CLI
-aws ec2 describe-instances --filters "Name=tag:Name,Values=lab3-web-server"
-aws ec2 describe-security-groups --filters "Name=group-name,Values=lab3-web-sg"
-```
-
-### Paso 15: Ejecutar Validación
-
-```bash
-cd ..
-./validate-lab.sh
-```
-
-## 📚 El Workflow Completo
-
-```
-1. WRITE     → Escribir configuración (.tf)
-2. INIT      → Inicializar providers
-3. VALIDATE  → Validar sintaxis
-4. FORMAT    → Formatear código
-5. PLAN      → Ver cambios
-6. APPLY     → Crear infraestructura
-7. VERIFY    → Verificar recursos
-8. MODIFY    → Hacer cambios
-9. PLAN      → Ver diferencias
-10. APPLY    → Aplicar cambios
-11. INSPECT  → Inspeccionar state
-12. DESTROY  → Limpiar recursos
-```
-
-## 🔧 Comandos del Workflow
-
-| Fase | Comando | Descripción |
-|------|---------|-------------|
-| Write | - | Editar archivos `.tf` |
-| Init | `terraform init` | Inicializar |
-| Validate | `terraform validate` | Validar sintaxis |
-| Format | `terraform fmt` | Formatear código |
-| Plan | `terraform plan` | Ver cambios |
-| Apply | `terraform apply` | Aplicar cambios |
-| Show | `terraform show` | Ver state |
-| Output | `terraform output` | Ver outputs |
-| Destroy | `terraform destroy` | Destruir todo |
-
-## 💡 Mejores Prácticas
-
-1. **Siempre planea antes de aplicar**
-   ```bash
-   terraform plan
-   terraform apply
-   ```
-
-2. **Guarda planes para revisión**
-   ```bash
-   terraform plan -out=tfplan
-   terraform show tfplan
-   terraform apply tfplan
-   ```
-
-3. **Usa auto-approve solo en desarrollo**
-   ```bash
-   # Desarrollo
-   terraform apply -auto-approve
-   
-   # Producción
-   terraform apply  # Requiere confirmación
-   ```
-
-4. **Destruye recursos de lab**
-   ```bash
-   # Siempre al terminar
-   terraform destroy
-   ```
-
-## 🔧 Troubleshooting
-
-### Error: "No valid credential sources found"
-
-```bash
-# Configurar AWS CLI
-aws configure
-
-# O usar variables de entorno
-export AWS_ACCESS_KEY_ID="..."
-export AWS_SECRET_ACCESS_KEY="..."
-```
-
-### Error: "AMI not found"
-
-```bash
-# La AMI puede variar por región
-# Buscar AMI de Amazon Linux 2 en tu región:
-aws ec2 describe-images \
-  --owners amazon \
-  --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" \
-  --query 'Images[0].ImageId' \
-  --output text
-```
-
-### El servidor web no responde
-
-```bash
-# Espera 2-3 minutos para que el user_data se ejecute
-# Verifica el security group permite puerto 80
-# Verifica la IP pública: terraform output public_ip
-```
-
-### Recursos no se destruyen
-
-```bash
-# Forzar destrucción
-terraform destroy -auto-approve
-
-# Verificar en AWS Console manualmente
-```
-
-## ✅ Criterios de Validación
-
-1. ✅ Proyecto `lab3-workflow` creado
-2. ✅ Archivo `main.tf` con configuración completa
-3. ✅ `terraform init` ejecutado exitosamente
-4. ✅ `terraform plan` muestra 2 recursos a crear
-5. ✅ `terraform apply` crea infraestructura
-6. ✅ Servidor web accesible en navegador
-7. ✅ `terraform destroy` limpia recursos
-
-## 🎓 Conceptos Aprendidos
-
-- ✅ Workflow completo de Terraform
-- ✅ Crear infraestructura real en AWS
-- ✅ Security Groups y EC2 instances
-- ✅ User data para configuración inicial
-- ✅ Outputs para información útil
-- ✅ Modificar recursos existentes
-- ✅ Destruir infraestructura
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Workflow Master Badge**
+| Concepto | Descripción |
+|---|---|
+| `terraform init` | Descarga providers y prepara el directorio de trabajo |
+| `terraform validate` | Comprueba sintaxis y referencias sin contactar la API |
+| `terraform fmt` | Aplica el estilo canónico de HashiCorp al código HCL |
+| `terraform plan` | Calcula y muestra la diferencia entre config y state |
+| `terraform apply` | Ejecuta los cambios y actualiza el state |
+| `terraform output` | Muestra los valores de los bloques `output` del state |
+| `terraform state list` | Enumera los recursos registrados en el state |
+| `terraform destroy` | Elimina todos los recursos gestionados |
+| Plan file (`-out`) | Archivo binario que congela un plan para aplicarlo sin cambios |
+| State file | Archivo JSON que registra el estado real de cada recurso gestionado |
+| Dependencia implícita | Referencia de un recurso a un atributo de otro; Terraform infiere el orden |
+| `-auto-approve` | Omite la confirmación interactiva; solo recomendado en desarrollo |
 
 ---
 
-**Anterior:** [Módulo 3 - Intro](../)  
+**Anterior:** [Modulo 3 - Core Workflow](../)
 **Siguiente:** [Lab 2 - Targets Incremental](../lab2-targets-incremental/)

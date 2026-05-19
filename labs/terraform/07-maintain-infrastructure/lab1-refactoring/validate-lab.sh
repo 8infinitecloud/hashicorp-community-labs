@@ -2,55 +2,57 @@
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASSED=0; FAILED=0
 
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 validate() {
     echo -n "  $1... "
     if eval "$2" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ PASS${NC}"; ((PASSED++))
+        echo -e "${GREEN}PASS${NC}"; ((PASSED++))
     else
-        echo -e "${RED}❌ FAIL${NC} — $3"; ((FAILED++))
+        echo -e "${RED}FAIL${NC} — $3"; ((FAILED++))
     fi
 }
 
-echo -e "${YELLOW}🧪 Validando Lab 1: Refactoring${NC}"
+echo -e "${YELLOW}Validando Lab 1: Refactoring con moved blocks${NC}"
 echo "================================================"
 
-validate "Terraform inicializado (.terraform/)" \
-    "[ -d '.terraform' ]" \
+validate "Terraform inicializado" \
+    "test -d $PROJECT_DIR/.terraform || test -f $PROJECT_DIR/terraform.tfstate" \
     "Ejecuta: terraform init"
 
 validate "Estado aplicado (terraform.tfstate)" \
-    "[ -f 'terraform.tfstate' ]" \
+    "test -f $PROJECT_DIR/terraform.tfstate" \
     "Ejecuta: terraform apply -auto-approve"
 
-validate "Estado NO tiene nombres genéricos (f1/f2/f3/archivo1)" \
-    "! terraform state list 2>/dev/null | grep -qiE '\.(f[0-9]+|archivo[0-9]+)$'" \
-    "Renombra los recursos a nombres descriptivos usando moved blocks"
+validate "State NO contiene nombres genericos (f1/f2/f3)" \
+    "! terraform -chdir=$PROJECT_DIR state list 2>/dev/null | grep -qE '\.(f[0-9]+)$'" \
+    "Renombra los recursos usando moved blocks (f1 -> config, f2 -> credenciales, f3 -> inventario)"
 
-validate "Módulo modules/secretos/ extraído" \
-    "[ -d 'modules/secretos' ] || [ -d 'modules/configs' ] || [ -d 'modules/archivos' ]" \
-    "Extrae recursos en un módulo reutilizable"
+validate "Modulo modulos/secretos extraido" \
+    "test -f $PROJECT_DIR/modulos/secretos/main.tf" \
+    "Crea el modulo en modulos/secretos/main.tf"
 
-validate "Plan muestra No changes (refactoring sin destrucción)" \
-    "terraform plan -detailed-exitcode 2>/dev/null; [ $? -eq 0 ]" \
-    "El refactoring no debe requerir recrear recursos — usa moved blocks"
+validate "State contiene recurso en el modulo secretos" \
+    "terraform -chdir=$PROJECT_DIR state list 2>/dev/null | grep -q 'module.secretos'" \
+    "Mueve local_file.credenciales al modulo con: moved { from = local_file.credenciales to = module.secretos.local_file.archivo }"
 
-validate "Bloque moved o terraform state mv documentado" \
-    "grep -rq '^moved {' . --include='*.tf' || [ -f 'historial-migraciones.md' ] || [ -f 'refactoring.md' ]" \
-    "Documenta los cambios con moved blocks o un archivo de notas"
+validate "Archivos fisicos existen en output/" \
+    "test -f $PROJECT_DIR/output/config.json && test -f $PROJECT_DIR/output/secretos.txt && test -f $PROJECT_DIR/output/inventario.ini" \
+    "Los archivos gestionados deben existir en output/"
 
-validate "Código tiene variables descriptivas (no hardcoded)" \
-    "grep -q 'variable ' main.tf || grep -rq 'variable ' modules/ --include='*.tf'" \
-    "Usa variables en lugar de valores hardcodeados"
+validate "Plan sin cambios (refactoring sin destruccion)" \
+    "terraform -chdir=$PROJECT_DIR plan -detailed-exitcode 2>/dev/null; test \$? -eq 0" \
+    "El refactoring no debe requerir recrear recursos — verifica los moved blocks"
 
 echo ""
 echo "================================================"
 echo -e "Resultados: ${GREEN}${PASSED} PASS${NC} | ${RED}${FAILED} FAIL${NC}"
 
-if [ $FAILED -eq 0 ] && [ $PASSED -ge 5 ]; then
-    echo -e "${GREEN}🎉 ¡LABORATORIO COMPLETADO! Badge: Terraform Refactoring${NC}"
-    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "../../../.badge-tf-m7-lab1"
+if [ "$FAILED" -eq 0 ] && [ "$PASSED" -ge 5 ]; then
+    echo -e "${GREEN}LABORATORIO COMPLETADO — Badge: Terraform Refactoring${NC}"
+    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "$PROJECT_DIR/../../../.badge-tf-m7-lab1"
     exit 0
 else
-    echo -e "${RED}❌ LABORATORIO INCOMPLETO — revisa los puntos fallidos arriba.${NC}"
+    echo -e "${RED}LABORATORIO INCOMPLETO — revisa los puntos fallidos arriba.${NC}"
     exit 1
 fi

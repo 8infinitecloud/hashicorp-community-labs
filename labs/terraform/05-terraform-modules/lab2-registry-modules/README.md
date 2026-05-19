@@ -2,61 +2,42 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Registry_Modules-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Usar módulos del Terraform Registry: encontrarlos, leer su documentación, instalarlos con versión fija y usarlos en tu proyecto — sin necesidad de credenciales cloud.
+## Objetivo
 
-## ⏱️ Duración
+Usar módulos del Terraform Registry: encontrarlos, instalarlos con versión fija y consumirlos en tu proyecto, sin necesidad de credenciales cloud.
+
+## Duración
+
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 1 del módulo 05 completado
+## Prerrequisitos
+
+- Lab 1 del módulo 05 completado
 - Terraform instalado
-- Conexión a internet (para descargar módulos del Registry)
+- Conexión a internet (para descargar providers del Registry)
 
-## 🚀 Instrucciones Paso a Paso
+## Instrucciones Paso a Paso
 
-### Paso 1: Navegar el Terraform Registry
-
-```bash
-# Abre en el browser (opcional — también puedes seguir el README)
-# https://registry.terraform.io/
-#
-# Estructura de un módulo en el Registry:
-# registry.terraform.io/<NAMESPACE>/<MODULO>/<PROVIDER>
-#
-# Ejemplos:
-# registry.terraform.io/hashicorp/dir/template     → genera estructura de directorios
-# registry.terraform.io/cloudposse/label/null      → genera etiquetas/tags estándar
-# registry.terraform.io/terraform-aws-modules/vpc/aws → crea VPCs en AWS (requiere credenciales)
-#
-# Para este lab usamos "hashicorp/dir/template" y el provider "random"
-# porque NO requieren credenciales cloud.
-```
-
-### Paso 2: Crear el Proyecto
+### Paso 1: Preparar el Directorio de Trabajo
 
 ```bash
-mkdir lab2-registry-modules
-cd lab2-registry-modules
+mkdir -p /root/lab
 ```
 
-### Paso 3: Usar el Provider Random desde el Registry
+Todo el trabajo de este lab se hace dentro de `/root/lab`. El provider `hashicorp/random` genera valores aleatorios y no requiere credenciales cloud, lo que lo hace ideal para aprender el flujo del Registry.
 
-El provider `hashicorp/random` genera valores aleatorios — es un excelente ejemplo de módulo del Registry porque:
-- No necesita credenciales
-- Descarga desde registry.terraform.io automáticamente
-- Muestra el flujo completo: source → init → apply
+### Paso 2: Crear la Configuración Principal
 
-Crea `main.tf`:
-
-```hcl
+```bash
+touch /root/lab/main.tf
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
 
   required_providers {
     random = {
-      source  = "hashicorp/random"   # ← viene del Terraform Registry
-      version = "~> 3.6"             # ← versión fija: 3.6.x
+      source  = "hashicorp/random"
+      version = "~> 3.6"
     }
     local = {
       source  = "hashicorp/local"
@@ -65,7 +46,6 @@ terraform {
   }
 }
 
-# Recurso del provider random
 resource "random_id" "proyecto" {
   byte_length = 8
 }
@@ -86,76 +66,67 @@ resource "random_password" "secreto" {
   override_special = "!#$%"
 }
 
-# Usar los valores generados en un archivo de config
 resource "local_file" "config_app" {
   filename = "${path.module}/config-generada.txt"
   content  = <<-EOT
-    # Configuración generada por Terraform Registry (random provider)
-    # ---------------------------------------------------------------
-    app_id    = ${random_id.proyecto.hex}
-    servidor  = ${random_pet.nombre_servidor.id}
-    puerto    = ${random_integer.puerto.result}
-    secreto   = ${random_password.secreto.result}
+    # Configuracion generada por Terraform (random provider)
+    app_id   = ${random_id.proyecto.hex}
+    servidor = ${random_pet.nombre_servidor.id}
+    puerto   = ${random_integer.puerto.result}
+    secreto  = ${random_password.secreto.result}
   EOT
 }
 
 output "app_id"   { value = random_id.proyecto.hex }
 output "servidor" { value = random_pet.nombre_servidor.id }
 output "puerto"   { value = random_integer.puerto.result }
+EOF
 ```
 
-### Paso 4: Inicializar — Terraform descarga del Registry
+El bloque `required_providers` le indica a Terraform que descargue `hashicorp/random` y `hashicorp/local` desde `registry.terraform.io`. La versión `~> 3.6` permite actualizaciones de parche (3.6.x) pero no de minor.
+
+### Paso 3: Inicializar — Terraform Descarga del Registry
 
 ```bash
-# Terraform lee los 'source' y descarga los providers del Registry
-terraform init
-
-# Verás:
-# Initializing provider plugins...
-# - Finding hashicorp/random versions matching "~> 3.6"...
-# - Finding hashicorp/local versions matching "~> 2.0"...
-# - Installing hashicorp/random v3.6.x...
-# - Installing hashicorp/local v2.x.x...
-
-# Ver qué se descargó
-cat .terraform.lock.hcl   # versiones exactas instaladas
-ls .terraform/providers/  # binarios descargados
+cd /root/lab && terraform init
 ```
 
-### Paso 5: Aplicar
+`terraform init` lee los `source` declarados en `required_providers` y descarga los binarios correspondientes desde `registry.terraform.io`. Al finalizar crea `.terraform.lock.hcl` con los checksums exactos de cada versión instalada.
+
+### Paso 4: Verificar el Lock File
 
 ```bash
-terraform plan
-terraform apply -auto-approve
-
-# Ver los valores generados
-cat config-generada.txt
-terraform output
+cat /root/lab/.terraform.lock.hcl
 ```
 
-Cada `terraform apply` genera valores DIFERENTES excepto para recursos marcados como `keep_providers`.
+El lock file fija las versiones exactas y sus checksums. Commitearlo en el repositorio garantiza que todos los miembros del equipo usen exactamente la misma versión del provider, sin importar cuándo ejecuten `terraform init`.
+
+### Paso 5: Aplicar y Ver los Valores Generados
 
 ```bash
-# Destruir y re-crear para ver valores nuevos
-terraform destroy -auto-approve
-terraform apply -auto-approve
-cat config-generada.txt   # valores distintos
+cd /root/lab && terraform apply -auto-approve
 ```
 
-### Paso 6: Entender el Patrón de Módulo del Registry
-
-Los módulos son agrupaciones de recursos. Crea un módulo local que imita el patrón:
+Crea los recursos `random_*` y el archivo de configuración. Cada ejecución sin state previo genera valores distintos, porque los providers `random` crean datos nuevos cada vez.
 
 ```bash
-mkdir -p modules/identificador
+cat /root/lab/config-generada.txt
 ```
 
-Crea `modules/identificador/main.tf`:
+Muestra el archivo de configuración con los valores aleatorios generados. Esto simula el patrón real donde Terraform genera IDs, contraseñas y nombres de recursos de forma automática.
 
-```hcl
-# modules/identificador/main.tf
-# Módulo que genera identificadores únicos para un servicio
+```bash
+cd /root/lab && terraform output
+```
 
+Muestra los tres outputs definidos: `app_id`, `servidor` y `puerto`. Los outputs permiten que otros módulos o pipelines de CI/CD consuman valores generados por Terraform.
+
+### Paso 6: Crear el Módulo Local — Estructura
+
+```bash
+mkdir -p /root/lab/modules/identificador
+touch /root/lab/modules/identificador/main.tf
+cat > /root/lab/modules/identificador/main.tf <<'EOF'
 terraform {
   required_providers {
     random = {
@@ -191,18 +162,22 @@ resource "random_pet" "alias" {
 
 output "id_completo" {
   value       = "${var.entorno}-${var.servicio}-${random_id.id.hex}"
-  description = "Identificador único del servicio"
+  description = "Identificador unico del servicio"
 }
 
 output "alias" {
   value       = "${var.servicio}-${random_pet.alias.id}"
   description = "Alias legible del servicio"
 }
+EOF
 ```
 
-Actualiza `main.tf` para usar el módulo:
+Este módulo encapsula la lógica de generación de identificadores únicos: recibe el nombre del servicio y el entorno como entrada, y devuelve un ID técnico y un alias legible. El bloque `validation` rechaza entornos no reconocidos antes de crear recursos.
 
-```hcl
+### Paso 7: Actualizar main.tf para Usar el Módulo
+
+```bash
+cat > /root/lab/main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
   required_providers {
@@ -232,8 +207,8 @@ module "id_api" {
 resource "local_file" "inventario" {
   filename = "${path.module}/inventario.txt"
   content  = <<-EOT
-    web  → ${module.id_web.id_completo}  (alias: ${module.id_web.alias})
-    api  → ${module.id_api.id_completo}  (alias: ${module.id_api.alias})
+    web -> ${module.id_web.id_completo}  (alias: ${module.id_web.alias})
+    api -> ${module.id_api.id_completo}  (alias: ${module.id_api.alias})
   EOT
 }
 
@@ -243,80 +218,69 @@ output "inventario" {
     api = module.id_api.id_completo
   }
 }
-```
-
-```bash
-terraform init   # re-init por nuevo módulo
-terraform apply -auto-approve
-cat inventario.txt
-terraform output inventario
-```
-
-### Paso 7: Cómo se Usaría un Módulo Real del Registry
-
-```bash
-# En proyectos reales con cloud, usarías:
-cat > ejemplo-aws-no-ejecutar.tf.referencia << 'EOF'
-# Este código es REFERENCIA — requiere credenciales AWS
-# Lo ejecutarías en tu entorno con AWS configurado
-
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"   # ← del Registry
-  version = "5.8.0"                            # ← versión fija
-
-  name = "mi-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["us-east-1a", "us-east-1b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-
-  tags = { Terraform = "true", Environment = "dev" }
-}
-
-output "vpc_id" { value = module.vpc.vpc_id }
 EOF
-
-echo "Patrón idéntico al módulo local — solo cambia el source"
 ```
 
-### Paso 8: Ejecutar Validación
+El `main.tf` actualizado instancia el módulo `identificador` dos veces con parámetros distintos. Los outputs del módulo se referencian con `module.<nombre>.<output>` para construir el inventario final.
+
+### Paso 8: Re-inicializar y Aplicar con el Módulo
 
 ```bash
-./validate-lab.sh
+cd /root/lab && terraform init
 ```
 
-## ✅ Criterios de Validación
+Siempre ejecuta `terraform init` después de agregar un nuevo módulo o cambiar su `source`. Terraform registra el módulo local y descarga cualquier provider adicional que declare.
 
-1. ✅ `hashicorp/random` descargado del Registry con `terraform init`
-2. ✅ `.terraform.lock.hcl` generado con versiones fijas
-3. ✅ Recursos `random_id`, `random_pet`, `random_integer` aplicados
-4. ✅ Módulo local creado con `source = "./modules/identificador"`
-5. ✅ Módulo usado dos veces con parámetros distintos
+```bash
+cd /root/lab && terraform apply -auto-approve
+```
 
-## 💡 Diferencia: Provider vs Módulo
+Crea los recursos de ambas instancias del módulo y el archivo `inventario.txt`. El estado agrupa los recursos bajo `module.id_web.*` y `module.id_api.*` respectivamente.
+
+```bash
+cat /root/lab/inventario.txt
+```
+
+Muestra el inventario con los identificadores únicos generados para cada servicio. Este patrón se usa en proyectos reales para generar nombres de recursos cloud sin colisiones.
+
+```bash
+cd /root/lab && terraform output inventario
+```
+
+Muestra el mapa de outputs con los IDs completos de web y api. Los outputs de tipo `map` son útiles para pasar múltiples valores a módulos descendientes o a pipelines externos.
+
+### Paso 9: Validar el Laboratorio
+
+```bash
+cd /root/lab
+bash validate-lab.sh
+```
+
+---
+
+## Criterios de Validacion
+
+1. `hashicorp/random` descargado del Registry con `terraform init`
+2. `.terraform.lock.hcl` generado con versiones fijas
+3. Recursos `random_id`, `random_pet`, `random_integer` aplicados
+4. Módulo local `modules/identificador/` creado con `main.tf`
+5. El `main.tf` raíz usa el módulo al menos dos veces
+
+## Diferencia: Provider vs Módulo
 
 | | Provider | Módulo |
 |---|---|---|
-| **Qué es** | Plugin que habla con una API (AWS, GCP…) | Conjunto reutilizable de recursos |
-| **Fuente** | `required_providers { source = "..." }` | `module { source = "..." }` |
-| **Registry URL** | `registry.terraform.io/providers/hashicorp/random` | `registry.terraform.io/modules/namespace/nombre/provider` |
-| **Ejemplo** | `hashicorp/random` | `terraform-aws-modules/vpc/aws` |
+| Qué es | Plugin que habla con una API | Conjunto reutilizable de recursos |
+| Fuente | `required_providers { source = "..." }` | `module { source = "..." }` |
+| Ejemplo | `hashicorp/random` | `terraform-aws-modules/vpc/aws` |
 
-## 🎓 Conceptos Aprendidos
+## Conceptos Aprendidos
 
-- ✅ Estructura de una fuente del Registry: `namespace/nombre/provider`
-- ✅ `required_providers` con `source` y `version`
-- ✅ `terraform init` descarga providers y módulos del Registry
-- ✅ `.terraform.lock.hcl` fija las versiones exactas
-- ✅ Patrón `module { source = "..." }` es el mismo para local y Registry
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Registry Expert Badge**
+- Estructura de una fuente del Registry: `namespace/nombre/provider`
+- `required_providers` con `source` y `version`
+- `terraform init` descarga providers del Registry
+- `.terraform.lock.hcl` fija las versiones exactas
+- El patrón `module { source = "..." }` es el mismo para local y Registry
 
 ---
 

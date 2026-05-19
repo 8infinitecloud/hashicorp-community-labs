@@ -1,506 +1,307 @@
 # Lab 4: Terraform CLI Avanzado
 
-![Terraform](https://img.shields.io/badge/Terraform-CLI%20Master-7B42BC?style=flat&logo=terraform)
+## Objetivo
 
-## 🎯 Objetivo
-Dominar los comandos esenciales y avanzados de Terraform CLI para ser más productivo.
+Dominar los comandos esenciales de Terraform CLI: validacion, formato, plan con archivos de salida, workspaces, variables de entorno y debugging, usando un proyecto local real como base de practica.
 
-## ⏱️ Duración
+## Duracion
+
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Lab 3 completado
-- Terraform instalado
-- Proyecto del Lab 3 disponible
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Lab 3 completado (directorio `lab3-state` disponible)
+- Terraform instalado (verificar con `terraform version`)
 
-### Paso 1: Usar el Proyecto del Lab 3
+## Instrucciones
+
+### Paso 1: Crear el directorio del proyecto
 
 ```bash
-# Ir al proyecto del lab anterior
-cd lab2-state
-
-# O crear uno nuevo si lo prefieres
-# mkdir lab2-cli && cd lab2-cli
+mkdir lab4-cli
 ```
 
-### Paso 2: Comandos de Validación y Formato
+Crea un directorio nuevo para este lab en lugar de reutilizar el del Lab 3, para mantener el state aislado.
 
 ```bash
-# 1. VALIDAR SINTAXIS (sin acceder a providers)
+cd lab4-cli
+```
+
+Entra al directorio de trabajo del lab.
+
+### Paso 2: Crear el archivo main.tf
+
+```bash
+touch main.tf
+```
+
+Crea el archivo vacio antes de escribir el contenido.
+
+```bash
+cat > main.tf <<'EOF'
+terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.4"
+    }
+  }
+}
+
+variable "app_name" {
+  description = "Nombre de la aplicacion"
+  type        = string
+  default     = "PeruApp"
+}
+
+variable "instance_count" {
+  description = "Numero de instancias"
+  type        = number
+  default     = 2
+}
+
+resource "random_pet" "server_name" {
+  length    = 2
+  separator = "-"
+}
+
+resource "random_integer" "port" {
+  min = 8000
+  max = 9000
+}
+
+resource "local_file" "cheatsheet" {
+  filename = "terraform-cheatsheet.md"
+  content  = <<-EOT
+    # Terraform CLI Cheatsheet
+
+    ## Workflow basico
+    terraform init      # Inicializar directorio y descargar providers
+    terraform validate  # Validar sintaxis sin contactar providers
+    terraform fmt       # Formatear codigo HCL automaticamente
+    terraform plan      # Ver cambios antes de aplicarlos
+    terraform apply     # Aplicar cambios
+    terraform destroy   # Destruir todos los recursos
+
+    ## Inspeccion
+    terraform show              # Ver state completo en formato legible
+    terraform state list        # Listar recursos en el state
+    terraform state show RES    # Ver atributos de un recurso
+    terraform output            # Ver outputs
+    terraform providers         # Ver providers activos
+
+    ## Flags utiles
+    -auto-approve               # Omitir confirmacion interactiva
+    -var="key=value"            # Pasar variable inline
+    -var-file="archivo.tfvars"  # Cargar variables desde archivo
+    -out=tfplan                 # Guardar plan en archivo binario
+    -target=resource.name       # Operar solo sobre un recurso
+    -refresh-only               # Solo actualizar el state
+    -json                       # Output en formato JSON
+
+    ## Debugging
+    export TF_LOG=DEBUG         # Habilitar logs detallados
+    export TF_LOG_PATH=tf.log   # Guardar logs en archivo
+    unset TF_LOG                # Deshabilitar logs
+
+    ## Variables de entorno
+    TF_VAR_nombre=valor         # Valor para variable de input
+    TF_INPUT=false              # Deshabilitar prompts interactivos
+
+    ## Workspaces
+    terraform workspace list    # Listar workspaces
+    terraform workspace new ENV # Crear workspace
+    terraform workspace select  # Cambiar workspace
+    terraform workspace show    # Ver workspace actual
+  EOT
+}
+
+output "app_info" {
+  value = {
+    app_name       = var.app_name
+    instance_count = var.instance_count
+    server_name    = random_pet.server_name.id
+    port           = random_integer.port.result
+  }
+}
+EOF
+```
+
+Este `main.tf` es intencionalmente simple para que el foco del lab sea practicar los comandos CLI, no la configuracion en si. El archivo `cheatsheet` generado es una referencia util para los laboratorios siguientes.
+
+### Paso 3: Validar la sintaxis
+
+```bash
 terraform validate
-
-# Output: Success! The configuration is valid.
-
-# 2. FORMATEAR CÓDIGO AUTOMÁTICAMENTE
-terraform fmt
-
-# 3. FORMATEAR Y MOSTRAR DIFERENCIAS
-terraform fmt -diff
-
-# 4. VERIFICAR SI EL CÓDIGO ESTÁ FORMATEADO
-terraform fmt -check
-
-# Si devuelve archivos, necesitan formato
-# Si no devuelve nada, todo está bien
-
-# 5. FORMATEAR RECURSIVAMENTE (todos los subdirectorios)
-terraform fmt -recursive
 ```
 
-### Paso 3: Comandos de Plan y Apply
+Comprueba que el HCL es sintacticamente correcto y que las referencias entre recursos son validas, sin descargar providers ni acceder a APIs. Es el primer comando a ejecutar cuando sospechas de un error de sintaxis.
+
+### Paso 4: Inicializar Terraform
 
 ```bash
-# 1. PLAN BÁSICO
-terraform plan
+terraform init
+```
 
-# 2. PLAN CON SALIDA DETALLADA (guardar en archivo)
+Descarga los providers declarados en `required_providers` y configura el directorio `.terraform`. Este paso debe ejecutarse antes de cualquier plan o apply, y cada vez que agregas un nuevo provider.
+
+### Paso 5: Formatear el codigo
+
+```bash
+terraform fmt -diff
+```
+
+Formatea automaticamente todos los archivos `.tf` del directorio segun el estilo oficial de HashiCorp y muestra las diferencias aplicadas. Agrega este comando a tu flujo de trabajo antes de hacer commits.
+
+```bash
+terraform fmt -check
+```
+
+Verifica que el codigo esta correctamente formateado sin modificar nada. Si devuelve nombres de archivos, esos archivos necesitan formato. Si no devuelve nada, todo esta bien. Ideal para CI/CD.
+
+### Paso 6: Guardar el plan en un archivo
+
+```bash
 terraform plan -out=tfplan
+```
 
-# 3. APLICAR PLAN GUARDADO (sin confirmación)
-terraform apply tfplan
+Genera el plan y lo guarda en el archivo binario `tfplan`. Guardar el plan garantiza que el apply ejecuta exactamente lo que fue revisado, sin recalcular ni sorpresas por cambios intermedios.
 
-# 4. APPLY CON AUTO-APROBACIÓN
-terraform apply -auto-approve
-
-# 5. APPLY CON VARIABLE INLINE
-terraform apply -var="length=3"
-
-# 6. APPLY CON ARCHIVO DE VARIABLES
-# Primero crear terraform.tfvars
-echo 'length = 3' > terraform.tfvars
-terraform apply -var-file="terraform.tfvars"
-
-# 7. VER PLAN GUARDADO
+```bash
 terraform show tfplan
 ```
 
-### Paso 4: Comandos de Inspección
+Muestra el contenido del plan guardado en formato legible. Esto permite revisar el plan antes de aplicarlo, especialmente util en pipelines CI/CD donde plan y apply ocurren en pasos separados.
+
+### Paso 7: Aplicar el plan guardado
 
 ```bash
-# 1. VER STATE COMPLETO
-terraform show
+terraform apply tfplan
+```
 
-# 2. LISTAR RECURSOS
+Aplica exactamente el plan guardado en `tfplan` sin pedir confirmacion. Al usar un archivo de plan, no se necesita `-auto-approve` porque ya fue aprobado al generarse.
+
+### Paso 8: Explorar los comandos de inspeccion
+
+```bash
 terraform state list
+```
 
-# 3. VER RECURSO ESPECÍFICO
+Lista todos los recursos actualmente gestionados por Terraform en el state. Usa esta lista para saber que recursos puedes inspeccionar con `terraform state show`.
+
+```bash
 terraform state show random_pet.server_name
+```
 
-# 4. VER OUTPUTS
-terraform output
+Muestra todos los atributos del recurso `random_pet.server_name`. Cualquier recurso de la lista anterior puede inspeccionarse de esta forma.
 
-# 5. VER OUTPUT ESPECÍFICO
-terraform output server_info
-
-# 6. OUTPUT EN JSON
+```bash
 terraform output -json
-
-# 7. OUTPUT EN JSON CON JQ
-terraform output -json | jq .
 ```
 
-### Paso 5: Comandos de Refresh
+Muestra los outputs en formato JSON, util para scripting o para integrar los valores de Terraform con otras herramientas.
+
+### Paso 9: Crear y usar workspaces
 
 ```bash
-# 1. ACTUALIZAR STATE SIN MODIFICAR RECURSOS
-terraform refresh
-
-# 2. VER QUÉ CAMBIARÍA UN REFRESH
-terraform plan -refresh-only
-
-# 3. APLICAR SOLO REFRESH
-terraform apply -refresh-only
-```
-
-### Paso 6: Comandos de Destroy
-
-```bash
-# 1. DESTRUIR TODO (con confirmación)
-terraform destroy
-
-# 2. DESTRUIR CON AUTO-APROBACIÓN
-terraform destroy -auto-approve
-
-# 3. DESTRUIR RECURSO ESPECÍFICO
-terraform destroy -target=random_pet.server_name
-
-# 4. PLAN DE DESTRUCCIÓN
-terraform plan -destroy
-```
-
-### Paso 7: Workspaces (Múltiples Ambientes)
-
-```bash
-# 1. LISTAR WORKSPACES
 terraform workspace list
+```
 
-# Output:
-# * default
+Lista los workspaces existentes. El workspace `default` siempre existe. Cada workspace tiene su propio state file independiente.
 
-# 2. CREAR WORKSPACE
-terraform workspace new desarrollo
-terraform workspace new produccion
+```bash
+terraform workspace new staging
+```
 
-# 3. CAMBIAR WORKSPACE
-terraform workspace select desarrollo
+Crea un workspace llamado `staging` y lo selecciona automaticamente. Terraform crea un nuevo state vacio para este workspace.
 
-# 4. VER WORKSPACE ACTUAL
+```bash
 terraform workspace show
-
-# 5. APLICAR EN WORKSPACE ESPECÍFICO
-terraform workspace select produccion
-terraform apply
-
-# Cada workspace tiene su propio state!
 ```
 
-### Paso 8: Debugging y Logs
+Confirma que el workspace activo es ahora `staging`. Los recursos creados desde aqui quedaran en el state de `staging`, separados del state de `default`.
 
 ```bash
-# 1. HABILITAR LOGS DETALLADOS
-export TF_LOG=DEBUG
+terraform workspace select default
+```
+
+Vuelve al workspace `default` sin eliminar `staging`. Puedes cambiar entre workspaces en cualquier momento; cada uno mantiene su state independiente.
+
+### Paso 10: Usar variables de entorno
+
+```bash
+export TF_VAR_app_name="TiendaPeru"
+```
+
+Define el valor de la variable `app_name` via variable de entorno. Terraform detecta automaticamente todas las variables de entorno con prefijo `TF_VAR_` y las usa como valores de input.
+
+```bash
 terraform plan
-
-# Niveles: TRACE, DEBUG, INFO, WARN, ERROR
-
-# 2. GUARDAR LOGS EN ARCHIVO
-export TF_LOG_PATH=terraform.log
-terraform apply
-
-# Ver logs
-cat terraform.log
-
-# 3. DESHABILITAR LOGS
-unset TF_LOG
-unset TF_LOG_PATH
-
-# 4. LOGS SOLO DE UN COMPONENTE
-export TF_LOG_CORE=DEBUG
-export TF_LOG_PROVIDER=TRACE
 ```
 
-### Paso 9: Terraform Console (Interactivo)
+Observa en el plan que `var.app_name` tiene el valor `TiendaPeru` sin haberlo especificado con `-var`. Las variables de entorno son utiles en pipelines donde no se puede modificar el comando directamente.
 
 ```bash
-# Abrir consola interactiva
-terraform console
-
-# Dentro de la consola, prueba:
-> random_pet.server_name.id
-> random_integer.port.result
-> upper("hello terraform")
-> length([1, 2, 3, 4, 5])
-> join(", ", ["Peru", "Chile", "Colombia"])
-> format("Server: %s on port %d", "web", 8080)
-> timestamp()
-> formatdate("YYYY-MM-DD", timestamp())
-
-# Salir
-> exit
+unset TF_VAR_app_name
 ```
 
-### Paso 10: Terraform Graph
+Limpia la variable de entorno para que las ejecuciones siguientes usen el valor por defecto del `main.tf`.
+
+### Paso 11: Debugging con TF_LOG
 
 ```bash
-# 1. GENERAR GRAFO DE DEPENDENCIAS
-terraform graph
-
-# 2. GENERAR GRAFO Y VISUALIZAR CON GRAPHVIZ
-# (requiere instalar graphviz: brew install graphviz)
-terraform graph | dot -Tpng > graph.png
-
-# Abrir imagen
-open graph.png  # macOS
-xdg-open graph.png  # Linux
-
-# 3. GRAFO EN FORMATO SVG
-terraform graph | dot -Tsvg > graph.svg
+export TF_LOG=INFO
 ```
 
-### Paso 11: Comandos de Providers
+Activa el nivel de logging `INFO`. Terraform imprimira mensajes adicionales sobre su proceso interno en stderr. Los niveles disponibles en orden de verbosidad son: `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`.
 
 ```bash
-# 1. LISTAR PROVIDERS USADOS
-terraform providers
-
-# Output:
-# Providers required by configuration:
-# .
-# ├── provider[registry.terraform.io/hashicorp/random] ~> 3.5
-# └── provider[registry.terraform.io/hashicorp/local] ~> 2.4
-
-# 2. VER SCHEMA DE PROVIDERS
-terraform providers schema -json | jq .
-
-# 3. VER SCHEMA DE UN PROVIDER ESPECÍFICO
-terraform providers schema -json | jq '.provider_schemas["registry.terraform.io/hashicorp/random"]'
-```
-
-### Paso 12: Variables de Entorno
-
-```bash
-# 1. VARIABLES DE TERRAFORM
-export TF_LOG=DEBUG              # Nivel de logging
-export TF_LOG_PATH=terraform.log # Archivo de log
-export TF_INPUT=false            # Deshabilitar input interactivo
-export TF_CLI_ARGS_plan="-compact-warnings"  # Args para plan
-
-# 2. VARIABLES DE INPUT (prefijo TF_VAR_)
-export TF_VAR_region=us-west-2
-export TF_VAR_instance_count=5
-
-# En tu código:
-variable "region" {}
-variable "instance_count" {}
-# Terraform usa automáticamente TF_VAR_region y TF_VAR_instance_count
-
-# 3. LIMPIAR VARIABLES
-unset TF_LOG
-unset TF_LOG_PATH
-unset TF_VAR_region
-```
-
-### Paso 13: Crear Cheatsheet
-
-Crea un archivo `terraform-cheatsheet.md`:
-
-```markdown
-# Terraform CLI Cheatsheet
-
-## Workflow Básico
-
-\`\`\`bash
-terraform init      # Inicializar directorio
-terraform validate  # Validar sintaxis
-terraform fmt       # Formatear código
-terraform plan      # Ver cambios
-terraform apply     # Aplicar cambios
-terraform destroy   # Destruir todo
-\`\`\`
-
-## Inspección
-
-\`\`\`bash
-terraform show              # Ver state completo
-terraform state list        # Listar recursos
-terraform state show RES    # Ver recurso específico
-terraform output            # Ver outputs
-terraform providers         # Ver providers
-\`\`\`
-
-## Debugging
-
-\`\`\`bash
-terraform console           # Consola interactiva
-terraform graph             # Grafo de dependencias
-export TF_LOG=DEBUG         # Logs detallados
-terraform validate          # Validar configuración
-\`\`\`
-
-## Gestión de State
-
-\`\`\`bash
-terraform refresh           # Actualizar state
-terraform state mv SRC DST  # Mover recurso
-terraform state rm RES      # Remover del state
-terraform import ADDR ID    # Importar recurso existente
-\`\`\`
-
-## Workspaces
-
-\`\`\`bash
-terraform workspace list    # Listar workspaces
-terraform workspace new DEV # Crear workspace
-terraform workspace select  # Cambiar workspace
-terraform workspace show    # Ver actual
-\`\`\`
-
-## Flags Útiles
-
-\`\`\`bash
--auto-approve              # Sin confirmación
--var="key=value"           # Variable inline
--var-file="file.tfvars"    # Archivo de variables
--out=tfplan                # Guardar plan
--target=resource           # Recurso específico
--refresh-only              # Solo refresh
--json                      # Output en JSON
--compact-warnings          # Warnings compactos
-\`\`\`
-
-## Variables de Entorno
-
-\`\`\`bash
-TF_LOG=DEBUG               # Nivel de log
-TF_LOG_PATH=file.log       # Archivo de log
-TF_VAR_name=value          # Variable de input
-TF_INPUT=false             # Sin input interactivo
-\`\`\`
-
-## Alias Útiles
-
-\`\`\`bash
-alias tf="terraform"
-alias tfi="terraform init"
-alias tfp="terraform plan"
-alias tfa="terraform apply"
-alias tfd="terraform destroy"
-alias tfo="terraform output"
-alias tfs="terraform state list"
-\`\`\`
-```
-
-### Paso 14: Ejecutar Validación
-
-```bash
-cd ..
-./validate-lab.sh
-```
-
-## 📚 Comandos por Categoría
-
-### Inicialización
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform init` | Inicializar directorio |
-| `terraform init -upgrade` | Actualizar providers |
-| `terraform init -reconfigure` | Reconfigurar backend |
-
-### Validación
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform validate` | Validar sintaxis |
-| `terraform fmt` | Formatear código |
-| `terraform fmt -check` | Verificar formato |
-
-### Planificación
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform plan` | Ver cambios |
-| `terraform plan -out=file` | Guardar plan |
-| `terraform plan -destroy` | Plan de destrucción |
-
-### Aplicación
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform apply` | Aplicar cambios |
-| `terraform apply -auto-approve` | Sin confirmación |
-| `terraform apply tfplan` | Aplicar plan guardado |
-
-### Destrucción
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform destroy` | Destruir todo |
-| `terraform destroy -target=RES` | Destruir recurso |
-| `terraform destroy -auto-approve` | Sin confirmación |
-
-### Inspección
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform show` | Ver state |
-| `terraform state list` | Listar recursos |
-| `terraform state show RES` | Ver recurso |
-| `terraform output` | Ver outputs |
-
-### Debugging
-
-| Comando | Descripción |
-|---------|-------------|
-| `terraform console` | Consola interactiva |
-| `terraform graph` | Grafo de dependencias |
-| `TF_LOG=DEBUG` | Logs detallados |
-
-## 💡 Tips y Trucos
-
-### 1. Alias para Productividad
-
-```bash
-# Agregar a ~/.bashrc o ~/.zshrc
-alias tf="terraform"
-alias tfi="terraform init"
-alias tfp="terraform plan"
-alias tfa="terraform apply -auto-approve"
-alias tfd="terraform destroy -auto-approve"
-alias tfo="terraform output"
-alias tfs="terraform state list"
-alias tfc="terraform console"
-```
-
-### 2. Autocompletado
-
-```bash
-# Instalar una sola vez
-terraform -install-autocomplete
-
-# Reiniciar shell
-source ~/.bashrc  # o ~/.zshrc
-```
-
-### 3. Pre-commit Hook
-
-```bash
-# .git/hooks/pre-commit
-#!/bin/bash
-terraform fmt -check
 terraform validate
 ```
 
-### 4. Makefile para Comandos Comunes
+Ejecuta validate con logging activo para ver los mensajes internos. Con nivel `INFO` se muestran los pasos de inicializacion y validacion del core de Terraform.
 
-```makefile
-.PHONY: init plan apply destroy
-
-init:
-	terraform init
-
-plan:
-	terraform plan
-
-apply:
-	terraform apply -auto-approve
-
-destroy:
-	terraform destroy -auto-approve
-
-fmt:
-	terraform fmt -recursive
-
-validate:
-	terraform validate
+```bash
+unset TF_LOG
 ```
 
-## ✅ Criterios de Validación
+Desactiva el logging para volver al comportamiento silencioso por defecto. Siempre desactiva `TF_LOG` cuando termines de depurar para evitar salidas muy verbosas.
 
-1. ✅ Comandos de validación ejecutados
-2. ✅ Comandos de inspección probados
-3. ✅ Workspaces creados y usados
-4. ✅ Debugging con logs habilitado
-5. ✅ Terraform console explorado
-6. ✅ Cheatsheet creado
+### Paso 12: Volver al directorio del lab y validar
 
-## 🎓 Conceptos Aprendidos
+```bash
+cd /root/lab
+```
 
-- ✅ Comandos esenciales de Terraform
-- ✅ Flags útiles para cada comando
-- ✅ Workspaces para múltiples ambientes
-- ✅ Debugging con TF_LOG
-- ✅ Terraform console interactivo
-- ✅ Variables de entorno
-- ✅ Productividad con alias
+Regresa al directorio raiz del lab donde se encuentra el script de validacion.
 
-## 🏆 Badge
+```bash
+bash validate-lab.sh
+```
 
-Al completar este laboratorio obtienes: **Terraform CLI Master Badge**
+Ejecuta todas las verificaciones automaticas para confirmar que el lab fue completado correctamente.
+
+## Conceptos
+
+| Concepto | Descripcion |
+|---|---|
+| `terraform validate` | Verifica sintaxis HCL y referencias sin acceder a providers ni APIs |
+| `terraform fmt` | Formatea archivos `.tf` segun el estilo oficial de HashiCorp |
+| `terraform fmt -check` | Verifica formato sin modificar; retorna codigo de error si hay diferencias |
+| `terraform plan -out=file` | Guarda el plan en un archivo binario para apply deterministico |
+| `terraform apply file` | Aplica exactamente el plan guardado, sin recalcular ni pedir confirmacion |
+| `terraform show file` | Muestra el contenido de un plan binario en formato legible |
+| `TF_VAR_nombre` | Variable de entorno que define el valor de la variable de input `nombre` |
+| `TF_LOG` | Variable de entorno que activa el logging con nivel `ERROR/WARN/INFO/DEBUG/TRACE` |
+| `terraform workspace` | Permite tener multiples states independientes para el mismo codigo |
+| `-target=resource.name` | Limita plan/apply a un recurso especifico (usar con cuidado) |
+| `terraform output -json` | Muestra outputs en JSON para integracion con scripting |
 
 ---
 
-**Anterior:** [Lab 3 - State](../lab3-terraform-state/)  
-**Siguiente:** [Módulo 3 - Core Workflow](../../03-core-workflow/)
+**Anterior:** [Lab 3 - State](../lab3-terraform-state/)
+**Siguiente:** [Modulo 3 - Core Workflow](../../03-core-workflow/)

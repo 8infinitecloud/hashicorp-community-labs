@@ -2,33 +2,46 @@
 
 ![Terraform](https://img.shields.io/badge/Terraform-Workspaces-7B42BC?style=flat&logo=terraform)
 
-## 🎯 Objetivo
-Gestionar múltiples entornos (dev/staging/prod) usando Terraform workspaces, manteniendo states separados con la misma configuración.
+## Objetivo
 
-## ⏱️ Duración
+Gestionar multiples entornos (dev, staging, prod) usando Terraform workspaces: cada workspace mantiene un state independiente con la misma configuracion de codigo, diferenciando parametros automaticamente mediante `terraform.workspace`.
+
+## Duracion
+
 25 minutos
 
-## 📋 Prerrequisitos
-- ✅ Labs 1 y 2 del módulo 06 completados
-- Terraform instalado
+## Prerrequisitos
 
-## 🚀 Instrucciones Paso a Paso
+- Labs 1 y 2 del modulo 06 completados
+- Terraform instalado (`terraform version` >= 1.0)
 
-### Paso 1: Crear el Proyecto
+## Instrucciones Paso a Paso
+
+### Paso 1: Preparar el directorio de trabajo
 
 ```bash
-mkdir lab3-workspaces
-cd lab3-workspaces
+cd /root/lab
 ```
 
-Crea `main.tf`:
+### Paso 2: Crear main.tf con logica multi-entorno
 
-```hcl
+```bash
+touch main.tf
+```
+
+```bash
+cat > main.tf <<'EOF'
 terraform {
   required_version = ">= 1.0"
+
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
 }
 
-# terraform.workspace devuelve el nombre del workspace activo
 locals {
   entorno = terraform.workspace
 
@@ -45,7 +58,7 @@ locals {
 resource "local_file" "deploy" {
   filename = "${path.module}/deploy-${local.entorno}.conf"
   content  = <<-EOT
-    # Configuración para: ${local.entorno}
+    entorno    = ${local.entorno}
     instancias = ${local.cfg.instancias}
     tipo       = ${local.cfg.tipo}
     debug      = ${local.cfg.debug}
@@ -55,164 +68,194 @@ resource "local_file" "deploy" {
 output "entorno"    { value = local.entorno }
 output "instancias" { value = local.cfg.instancias }
 output "tipo"       { value = local.cfg.tipo }
+EOF
 ```
 
-### Paso 2: Explorar el Workspace Default
+`terraform.workspace` es una variable especial de Terraform que devuelve el nombre del workspace activo. El bloque `locals` usa `lookup` para seleccionar la configuracion correcta segun el workspace, lo que permite que el mismo codigo funcione diferente en cada entorno sin duplicar archivos `.tf`.
+
+### Paso 3: Inicializar y aplicar en el workspace default
 
 ```bash
-# Ver workspace activo
-terraform workspace show
-
-# Listar todos los workspaces
-terraform workspace list
-
-# Inicializar
 terraform init
-terraform apply -auto-approve
+```
 
-# Ver qué se generó
+```bash
+terraform workspace show
+```
+
+```bash
+terraform apply -auto-approve
+```
+
+```bash
 cat deploy-default.conf
+```
+
+```bash
 terraform output
 ```
 
-### Paso 3: Crear y Usar Workspace Dev
+`terraform workspace show` confirma que estas en el workspace `default`. El apply en este workspace crea `deploy-default.conf` con la configuracion de 1 instancia tipo micro. Cada workspace aplica al mismo codigo pero con su propio state aislado.
+
+### Paso 4: Crear y aplicar en workspace dev
 
 ```bash
-# Crear workspace dev
 terraform workspace new dev
-
-# Verificar que cambió
-terraform workspace show
-terraform workspace list
-
-# Aplicar — genera su propio state
-terraform apply -auto-approve
-cat deploy-dev.conf
-terraform output entorno
 ```
 
-### Paso 4: Crear Workspace Staging
+```bash
+terraform workspace show
+```
+
+```bash
+terraform apply -auto-approve
+```
+
+```bash
+cat deploy-dev.conf
+```
+
+`terraform workspace new dev` crea el workspace y lo selecciona automaticamente. El apply genera `deploy-dev.conf` con la configuracion dev (1 instancia, micro). El state de `dev` se guarda en `terraform.tfstate.d/dev/terraform.tfstate`, separado del state de `default`.
+
+### Paso 5: Crear y aplicar en workspace staging
 
 ```bash
 terraform workspace new staging
-terraform apply -auto-approve
-
-cat deploy-staging.conf
-terraform output instancias
-# Debe mostrar 2
 ```
 
-### Paso 5: Crear Workspace Prod
+```bash
+terraform apply -auto-approve
+```
+
+```bash
+cat deploy-staging.conf
+```
+
+```bash
+terraform output instancias
+```
+
+El workspace `staging` genera `deploy-staging.conf` con 2 instancias tipo small. La salida de `terraform output instancias` debe mostrar `2`, confirmando que el lookup por workspace funciona correctamente.
+
+### Paso 6: Crear y aplicar en workspace prod
 
 ```bash
 terraform workspace new prod
+```
+
+```bash
 terraform apply -auto-approve
+```
 
+```bash
 cat deploy-prod.conf
+```
+
+```bash
 terraform output
-# Debe mostrar instancias=4, tipo=large
 ```
 
-### Paso 6: Comparar States Independientes
+El workspace `prod` genera `deploy-prod.conf` con 4 instancias tipo large y debug desactivado. La configuracion de produccion es diferente a la de dev simplemente por cambiar el workspace activo, sin modificar ningun archivo `.tf`.
+
+### Paso 7: Comparar los states independientes
 
 ```bash
-# Ver la estructura de states creada
-ls -la terraform.tfstate.d/
+ls terraform.tfstate.d/
+```
+
+```bash
 ls terraform.tfstate.d/dev/
-ls terraform.tfstate.d/staging/
+```
+
+```bash
 ls terraform.tfstate.d/prod/
-
-# Cada workspace tiene su propio terraform.tfstate
-echo "=== dev ==="
-cat terraform.tfstate.d/dev/terraform.tfstate | python3 -m json.tool | grep '"value"'
-
-echo "=== prod ==="
-cat terraform.tfstate.d/prod/terraform.tfstate | python3 -m json.tool | grep '"value"'
 ```
 
-### Paso 7: Cambiar entre Workspaces
+```bash
+terraform -chdir=. workspace list
+```
+
+Terraform almacena el state de cada workspace en `terraform.tfstate.d/<nombre>/terraform.tfstate`. El state del workspace `default` sigue en `terraform.tfstate` en la raiz. Cada workspace puede tener su propio ciclo de vida sin afectar a los demas.
+
+### Paso 8: Cambiar entre workspaces
 
 ```bash
-# Volver a dev
 terraform workspace select dev
-terraform workspace show
-terraform output instancias   # 1
-
-# Ir a prod
-terraform workspace select prod
-terraform output instancias   # 4
-
-# Cada switch cambia el state activo automáticamente
 ```
 
-### Paso 8: Destruir un Workspace
+```bash
+terraform workspace show
+```
 
 ```bash
-# Primero destruir los recursos del workspace
+terraform output instancias
+```
+
+```bash
+terraform workspace select prod
+```
+
+```bash
+terraform output instancias
+```
+
+`terraform workspace select` cambia el state activo. Al cambiar a `dev`, `terraform output instancias` muestra `1`; al cambiar a `prod` muestra `4`. El switch es instantaneo porque solo cambia que archivo tfstate usa Terraform.
+
+### Paso 9: Destruir un workspace y eliminarlo
+
+```bash
 terraform workspace select staging
+```
+
+```bash
 terraform destroy -auto-approve
+```
 
-# Volver a default para poder eliminar staging
+```bash
 terraform workspace select default
+```
 
-# Eliminar el workspace (solo si está vacío)
+```bash
 terraform workspace delete staging
+```
+
+```bash
 terraform workspace list
 ```
 
-### Paso 9: Ejecutar Validación
+Para eliminar un workspace debes primero destruir sus recursos y luego seleccionar otro workspace. No puedes eliminar el workspace `default`. `terraform workspace delete` falla si el workspace tiene recursos en su state.
+
+### Paso 10: Ejecutar validacion
 
 ```bash
-./validate-lab.sh
+cd /root/lab && bash validate-lab.sh
 ```
 
-## ✅ Criterios de Validación
+## Criterios de Validacion
 
-1. ✅ Workspaces dev, staging, prod creados
-2. ✅ Cada workspace genera configuración diferente
-3. ✅ States están separados en `terraform.tfstate.d/`
-4. ✅ `terraform.workspace` usado en la configuración
-5. ✅ Switch entre workspaces funciona correctamente
+1. Terraform inicializado (`.terraform/` presente)
+2. State del workspace `default` existe
+3. Workspace `dev` creado con su state aplicado
+4. Workspace `prod` creado con su state aplicado
+5. `main.tf` usa `terraform.workspace`
+6. Archivos `deploy-dev.conf` y `deploy-prod.conf` generados
 
-## 🔧 Troubleshooting
-
-### Error: "workspace already exists"
-
-```bash
-# El workspace ya fue creado, solo selecciónalo
-terraform workspace select dev
-```
-
-### Error: "workspace is not empty"
-
-```bash
-# Debes destruir los recursos antes de eliminar el workspace
-terraform workspace select <nombre>
-terraform destroy -auto-approve
-terraform workspace select default
-terraform workspace delete <nombre>
-```
-
-## 💡 Cuándo Usar Workspaces vs Directorios Separados
+## Cuando usar Workspaces vs Directorios Separados
 
 | Workspaces | Directorios separados |
 |------------|----------------------|
-| Misma configuración, entornos distintos | Configuraciones muy distintas por entorno |
-| Rápido de crear y cambiar | Más control y aislamiento |
-| Riesgo de aplicar en el entorno equivocado | Más difícil cometer errores |
-| Recomendado para entornos similares | Recomendado para producción crítica |
+| Misma configuracion, entornos distintos | Configuraciones muy distintas por entorno |
+| Rapido de crear y cambiar | Mas control y aislamiento |
+| Riesgo de aplicar en el entorno equivocado | Mas dificil cometer errores |
+| Recomendado para entornos similares | Recomendado para produccion critica |
 
-## 🎓 Conceptos Aprendidos
+## Conceptos Aprendidos
 
-- ✅ Crear, seleccionar y eliminar workspaces
-- ✅ Usar `terraform.workspace` en configuraciones
-- ✅ States independientes por workspace en `terraform.tfstate.d/`
-- ✅ Lookup dinámico de config por entorno
-- ✅ Cuándo usar workspaces vs estructuras de directorios
-
-## 🏆 Badge
-
-Al completar este laboratorio obtienes: **Terraform Workspaces Badge**
+- Crear, seleccionar y eliminar workspaces
+- Usar `terraform.workspace` en configuraciones
+- States independientes por workspace en `terraform.tfstate.d/`
+- Lookup dinamico de configuracion por entorno
+- Cuando usar workspaces vs estructuras de directorios
 
 ---
 

@@ -1,64 +1,110 @@
 #!/bin/bash
 
-echo "🔍 Validando Lab 1: Workflow Completo"
-echo "====================================="
+echo "Validando Lab 1: Workflow Completo"
+echo "==================================="
 echo ""
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 PASSED=0
 FAILED=0
+PROJECT_DIR="/root/lab"
 
-echo -e "${YELLOW}⚠️  Este lab requiere AWS CLI configurado${NC}"
-echo ""
-
-# Verificar AWS CLI
-if command -v aws &> /dev/null; then
-    echo -e "${GREEN}✅ PASS${NC} - AWS CLI instalado"
+# 1. Terraform instalado
+TF_VERSION=$(terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+if [ -n "$TF_VERSION" ]; then
+    echo -e "${GREEN}PASS${NC} - Terraform instalado (v${TF_VERSION})"
     ((PASSED++))
-    
-    # Verificar credenciales
-    if aws sts get-caller-identity &> /dev/null; then
-        echo -e "${GREEN}✅ PASS${NC} - Credenciales AWS configuradas"
-        ((PASSED++))
-    else
-        echo -e "${YELLOW}⚠️  WARN${NC} - Credenciales AWS no configuradas"
-    fi
 else
-    echo -e "${RED}❌ FAIL${NC} - AWS CLI no instalado"
+    echo -e "${RED}FAIL${NC} - Terraform no encontrado"
     ((FAILED++))
 fi
 
-# Buscar proyecto
-PROJECT_DIR=$(find . -maxdepth 2 -type d -name "*lab3*workflow*" 2>/dev/null | head -1)
-
-if [ -n "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/main.tf" ]; then
-    echo -e "${GREEN}✅ PASS${NC} - Proyecto encontrado"
+# 2. Directorio del proyecto existe
+if [ -d "$PROJECT_DIR" ]; then
+    echo -e "${GREEN}PASS${NC} - Directorio $PROJECT_DIR existe"
     ((PASSED++))
-    
-    # Verificar recursos en main.tf
-    if grep -q "aws_security_group" "$PROJECT_DIR/main.tf" && \
-       grep -q "aws_instance" "$PROJECT_DIR/main.tf"; then
-        echo -e "${GREEN}✅ PASS${NC} - Recursos AWS definidos"
-        ((PASSED++))
-    fi
+else
+    echo -e "${RED}FAIL${NC} - Directorio $PROJECT_DIR no encontrado"
+    ((FAILED++))
+fi
+
+# 3. main.tf existe
+if [ -f "$PROJECT_DIR/main.tf" ]; then
+    echo -e "${GREEN}PASS${NC} - main.tf encontrado"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - main.tf no encontrado en $PROJECT_DIR"
+    ((FAILED++))
+fi
+
+# 4. Terraform inicializado (.terraform o terraform.tfstate)
+if test -d "$PROJECT_DIR/.terraform" || test -f "$PROJECT_DIR/terraform.tfstate"; then
+    echo -e "${GREEN}PASS${NC} - Directorio inicializado (terraform init ejecutado)"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - No se detecta terraform init (.terraform ausente)"
+    ((FAILED++))
+fi
+
+# 5. main.tf contiene al menos un recurso local_file
+if grep -q 'resource "local_file"' "$PROJECT_DIR/main.tf" 2>/dev/null; then
+    echo -e "${GREEN}PASS${NC} - Recurso local_file definido en main.tf"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - No se encontro resource \"local_file\" en main.tf"
+    ((FAILED++))
+fi
+
+# 6. main.tf contiene al menos dos recursos
+RESOURCE_COUNT=$(grep -c '^resource ' "$PROJECT_DIR/main.tf" 2>/dev/null || echo 0)
+if [ "$RESOURCE_COUNT" -ge 2 ]; then
+    echo -e "${GREEN}PASS${NC} - main.tf tiene ${RESOURCE_COUNT} recursos definidos"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - Se esperan al menos 2 recursos, encontrados: ${RESOURCE_COUNT}"
+    ((FAILED++))
+fi
+
+# 7. main.tf contiene bloque output
+if grep -q '^output ' "$PROJECT_DIR/main.tf" 2>/dev/null; then
+    echo -e "${GREEN}PASS${NC} - Bloque output encontrado en main.tf"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - No se encontro bloque output en main.tf"
+    ((FAILED++))
+fi
+
+# 8. Formato correcto (terraform fmt -check)
+if terraform -chdir="$PROJECT_DIR" fmt -check > /dev/null 2>&1; then
+    echo -e "${GREEN}PASS${NC} - Codigo formateado correctamente (terraform fmt)"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - El codigo no esta bien formateado (ejecuta: terraform fmt)"
+    ((FAILED++))
+fi
+
+# 9. Configuracion valida (terraform validate)
+if terraform -chdir="$PROJECT_DIR" validate > /dev/null 2>&1; then
+    echo -e "${GREEN}PASS${NC} - Configuracion valida (terraform validate)"
+    ((PASSED++))
+else
+    echo -e "${RED}FAIL${NC} - Configuracion invalida (ejecuta: terraform validate)"
+    ((FAILED++))
 fi
 
 echo ""
-echo "📊 RESULTADO"
-echo "============"
-echo -e "Validaciones exitosas: ${GREEN}$PASSED${NC}"
+echo "Resultado: ${PASSED} verificaciones exitosas, ${FAILED} fallidas"
 
-if [ $PASSED -ge 3 ]; then
-    echo -e "${GREEN}🎉 ¡LABORATORIO COMPLETADO!${NC}"
-    echo "🏆 Badge: Terraform Workflow Master"
-    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "../../../.badge-terraform-m3-lab1-earned"
+if [ "$FAILED" -eq 0 ]; then
+    echo ""
+    echo -e "${GREEN}LABORATORIO COMPLETADO${NC}"
+    echo "$(date +%Y-%m-%d\ %H:%M:%S)" > "/root/.badge-terraform-m3-lab1-earned"
     exit 0
 else
-    echo -e "${YELLOW}⚠️  Lab completado parcialmente${NC}"
-    echo "Nota: Este lab requiere AWS para completarse totalmente"
-    exit 0
+    echo ""
+    echo -e "${RED}LABORATORIO INCOMPLETO${NC} - Revisa los puntos marcados con FAIL"
+    exit 1
 fi
