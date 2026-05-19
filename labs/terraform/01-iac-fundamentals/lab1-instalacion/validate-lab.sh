@@ -38,14 +38,8 @@ echo "---------------------------------------"
 validate "Terraform instalado" "command -v terraform"
 
 if [ $? -eq 0 ]; then
-    # Mostrar versión
-    TERRAFORM_VERSION=$(terraform version -json 2>/dev/null | grep -o '"terraform_version":"[^"]*' | cut -d'"' -f4)
-    if [ -n "$TERRAFORM_VERSION" ]; then
-        echo -e "${GREEN}   Versión instalada: $TERRAFORM_VERSION${NC}"
-    else
-        # Fallback si no funciona el JSON
-        terraform version | head -1
-    fi
+    TERRAFORM_VERSION=$(terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    echo -e "${GREEN}   Versión instalada: $TERRAFORM_VERSION${NC}"
 fi
 
 echo ""
@@ -53,7 +47,7 @@ echo ""
 # Validación 2: Versión mínima
 echo "🔢 Verificando versión de Terraform"
 echo "-----------------------------------"
-TERRAFORM_VERSION=$(terraform version -json 2>/dev/null | grep -o '"terraform_version":"[^"]*' | cut -d'"' -f4 | cut -d'v' -f2)
+TERRAFORM_VERSION=$(terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
 if [ -n "$TERRAFORM_VERSION" ]; then
     MAJOR_VERSION=$(echo $TERRAFORM_VERSION | cut -d'.' -f1)
