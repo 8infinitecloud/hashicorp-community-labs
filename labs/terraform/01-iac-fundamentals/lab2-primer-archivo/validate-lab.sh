@@ -63,7 +63,7 @@ echo ""
 # Validación 2: Terraform inicializado
 echo "🔧 Verificando inicialización"
 echo "-----------------------------"
-validate "Terraform inicializado" "test -d $PROJECT_DIR/.terraform"
+validate "Terraform inicializado" "test -d $PROJECT_DIR/.terraform || test -f $PROJECT_DIR/terraform.tfstate"
 
 if [ $? -ne 0 ]; then
     echo -e "${YELLOW}   Ejecuta: cd $PROJECT_DIR && terraform init${NC}"
