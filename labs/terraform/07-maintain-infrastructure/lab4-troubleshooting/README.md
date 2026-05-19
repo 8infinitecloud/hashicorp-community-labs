@@ -15,18 +15,17 @@ Importar infraestructura AWS pre-existente al state de Terraform usando `terrafo
 
 - Labs 1, 2 y 3 del modulo 07 completados
 - Terraform instalado
-- LocalStack corriendo
-- `awslocal` disponible en el PATH
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq .services.s3
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-El valor debe ser `"running"` o `"available"`. LocalStack debe estar activo antes de continuar.
+El servidor mock debe estar activo antes de continuar. Si muestra "No disponible aun", espera unos segundos y vuelve a intentarlo.
 
 ### Paso 2: Preparar el directorio de trabajo
 
@@ -38,11 +37,11 @@ cd /root/lab
 ### Paso 3: Crear infraestructura FUERA de Terraform (simula infra legada)
 
 ```bash
-awslocal s3 mb s3://bucket-legado --region us-east-1
+aws --endpoint-url http://localhost:4566 s3 mb s3://bucket-legado --region us-east-1
 ```
 
 ```bash
-awslocal s3api put-bucket-tagging --bucket bucket-legado --tagging 'TagSet=[{Key=Origen,Value=manual}]'
+aws --endpoint-url http://localhost:4566 s3api put-bucket-tagging --bucket bucket-legado --tagging 'TagSet=[{Key=Origen,Value=manual}]'
 ```
 
 Esto simula un bucket que alguien creo manualmente en la consola de AWS hace meses, sin ningun codigo Terraform. Es el escenario clasico cuando una empresa decide adoptar IaC: ya tiene recursos en produccion y necesita incorporarlos a Terraform sin destruirlos ni recrearlos.
@@ -50,7 +49,7 @@ Esto simula un bucket que alguien creo manualmente en la consola de AWS hace mes
 ### Paso 4: Verificar que el bucket existe
 
 ```bash
-awslocal s3 ls
+aws --endpoint-url http://localhost:4566 s3 ls
 ```
 
 El bucket `bucket-legado` debe aparecer en la lista. Terraform todavia no sabe nada de el.

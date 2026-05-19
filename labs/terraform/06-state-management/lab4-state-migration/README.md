@@ -14,17 +14,17 @@ Migrar el state de un backend local a un backend S3 remoto usando `terraform ini
 
 - Labs 1, 2 y 3 del modulo 06 completados
 - Terraform instalado (`terraform version` >= 1.0)
-- LocalStack corriendo en el contenedor
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq .services.s3
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-Debe retornar `"running"` o `"available"`. Este lab usa S3 como destino de la migracion del state, asi que necesitas que el servicio este disponible antes de continuar.
+Este lab usa S3 como destino de la migracion del state. El servidor mock debe estar disponible antes de continuar.
 
 ### Paso 2: Crear main.tf con backend local (sin bloque backend)
 
@@ -102,7 +102,7 @@ terraform state list
 ### Paso 5: Crear el bucket S3 de destino para el backend remoto
 
 ```bash
-awslocal s3 mb s3://tf-state-lab4
+aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab4
 ```
 
 El bucket de destino debe existir antes de ejecutar la migracion. Si Terraform no puede conectarse al bucket durante `init -migrate-state`, el proceso fallara y el state local permanecera intacto.
@@ -152,14 +152,14 @@ Tras una migracion exitosa, `terraform.tfstate` desaparece del directorio local 
 ### Paso 9: Verificar que el state existe en S3
 
 ```bash
-awslocal s3 ls s3://tf-state-lab4/lab4/
+aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab4/lab4/
 ```
 
 ```bash
 terraform state list
 ```
 
-`awslocal s3 ls` confirma que el archivo `terraform.tfstate` llego al bucket de destino. `terraform state list` lo recupera desde S3 y debe mostrar exactamente los mismos recursos que existian antes de la migracion.
+`aws --endpoint-url http://localhost:4566 s3 ls` confirma que el archivo `terraform.tfstate` llego al bucket de destino. `terraform state list` lo recupera desde S3 y debe mostrar exactamente los mismos recursos que existian antes de la migracion.
 
 ### Paso 10: Confirmar que no hay cambios de infraestructura
 
@@ -193,7 +193,7 @@ bash validate-lab.sh
 
 | Paso | Comando | Descripcion |
 |------|---------|-------------|
-| 1 | `awslocal s3 mb s3://bucket` | Crear el bucket de destino |
+| 1 | `aws --endpoint-url http://localhost:4566 s3 mb s3://bucket` | Crear el bucket de destino |
 | 2 | Crear `backend.tf` | Agregar bloque `backend "s3"` |
 | 3 | `terraform init -migrate-state` | Copiar state local a S3 |
 | 4 | `terraform state list` | Verificar recursos en state remoto |

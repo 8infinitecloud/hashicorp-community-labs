@@ -20,21 +20,17 @@ validate "Terraform instalado" \
     "terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | grep -q ." \
     "Instala Terraform >= 1.0"
 
-validate "LocalStack S3 esta corriendo" \
-    "curl -s http://localhost:4566/_localstack/health 2>/dev/null | grep -q '\"s3\"'" \
-    "Espera a que LocalStack arranque: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
-
-validate "LocalStack DynamoDB esta corriendo" \
-    "curl -s http://localhost:4566/_localstack/health 2>/dev/null | grep -q '\"dynamodb\"'" \
-    "Espera a que LocalStack arranque: curl -s http://localhost:4566/_localstack/health | jq .services.dynamodb"
+validate "Mock AWS server responde en localhost:4566" \
+    "curl -sf http://localhost:4566/ > /dev/null" \
+    "Espera a que el servidor mock arranque: curl -sf http://localhost:4566/ && echo OK"
 
 validate "Bucket tf-state-lab2 existe" \
-    "awslocal s3 ls 2>/dev/null | grep -q 'tf-state-lab2'" \
-    "Crea el bucket: awslocal s3 mb s3://tf-state-lab2"
+    "aws --endpoint-url http://localhost:4566 s3 ls 2>/dev/null | grep -q 'tf-state-lab2'" \
+    "Crea el bucket: aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab2"
 
 validate "Tabla DynamoDB tf-lock existe" \
-    "awslocal dynamodb describe-table --table-name tf-lock 2>/dev/null | grep -q 'TableName'" \
-    "Crea la tabla: awslocal dynamodb create-table --table-name tf-lock --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST"
+    "aws --endpoint-url http://localhost:4566 dynamodb describe-table --table-name tf-lock 2>/dev/null | grep -q 'TableName'" \
+    "Crea la tabla: aws --endpoint-url http://localhost:4566 dynamodb create-table --table-name tf-lock --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST"
 
 validate "providers.tf contiene dynamodb_table" \
     "grep -q 'dynamodb_table' '$PROJECT_DIR/providers.tf' 2>/dev/null" \
@@ -45,7 +41,7 @@ validate "Terraform inicializado (.terraform/ presente)" \
     "Ejecuta: terraform init"
 
 validate "State file existe en S3" \
-    "awslocal s3 ls s3://tf-state-lab2/lab2/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab2/lab2/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
     "Ejecuta: terraform apply -auto-approve"
 
 validate "terraform state list muestra aws_s3_bucket.app" \
@@ -57,7 +53,7 @@ validate "terraform state list muestra aws_dynamodb_table.datos" \
     "Ejecuta: terraform apply -auto-approve con el main.tf completo"
 
 validate "No hay locks activos en tf-lock" \
-    "awslocal dynamodb scan --table-name tf-lock 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('Count',1)==0 else 1)\"" \
+    "aws --endpoint-url http://localhost:4566 dynamodb scan --table-name tf-lock 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('Count',1)==0 else 1)\"" \
     "Hay un lock activo en DynamoDB -- espera a que termine el apply o ejecuta: terraform force-unlock <LOCK_ID>"
 
 echo ""

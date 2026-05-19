@@ -5,7 +5,7 @@
 
 ## Objetivo
 
-Detectar y reconciliar *configuration drift* real usando buckets S3 en LocalStack. El drift ocurre cuando alguien modifica infraestructura directamente en AWS (o en este caso, via `awslocal`) sin pasar por Terraform.
+Detectar y reconciliar *configuration drift* real usando buckets S3 en el servidor mock de AWS. El drift ocurre cuando alguien modifica infraestructura directamente en AWS (o en este caso, via el CLI con `--endpoint-url`) sin pasar por Terraform.
 
 ## Duracion
 
@@ -15,18 +15,17 @@ Detectar y reconciliar *configuration drift* real usando buckets S3 en LocalStac
 
 - Labs 1 y 2 del modulo 07 completados
 - Terraform instalado
-- LocalStack corriendo (`docker ps` debe mostrar el contenedor)
-- `awslocal` disponible en el PATH
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq .services.s3
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-El valor debe ser `"running"` o `"available"`. Si el comando falla, LocalStack aun no termino de iniciar — espera unos segundos y vuelve a intentarlo.
+El servidor mock corre en `http://localhost:4566`. Si muestra "No disponible aun", espera unos segundos y vuelve a intentarlo.
 
 ### Paso 2: Preparar el directorio de trabajo
 
@@ -109,7 +108,7 @@ Terraform crea el bucket y aplica los tags. El state local (`terraform.tfstate`)
 ### Paso 6: Verificar el estado inicial de los tags
 
 ```bash
-awslocal s3api get-bucket-tagging --bucket app-bucket-drift-lab
+aws --endpoint-url http://localhost:4566 s3api get-bucket-tagging --bucket app-bucket-drift-lab
 ```
 
 Debes ver `Environment=dev` y `ManagedBy=terraform`. Este es el estado "correcto" definido por el codigo Terraform.
@@ -117,7 +116,7 @@ Debes ver `Environment=dev` y `ManagedBy=terraform`. Este es el estado "correcto
 ### Paso 7: Simular drift — cambio manual fuera de Terraform
 
 ```bash
-awslocal s3api put-bucket-tagging --bucket app-bucket-drift-lab --tagging 'TagSet=[{Key=Environment,Value=produccion},{Key=ManagedBy,Value=manual}]'
+aws --endpoint-url http://localhost:4566 s3api put-bucket-tagging --bucket app-bucket-drift-lab --tagging 'TagSet=[{Key=Environment,Value=produccion},{Key=ManagedBy,Value=manual}]'
 ```
 
 Esto simula lo que ocurre cuando alguien entra directamente a la consola de AWS y cambia los tags de emergencia, o cuando un script externo sobreescribe la configuracion. El state de Terraform todavia dice `Environment=dev`, pero la realidad en AWS ahora dice `Environment=produccion`.
@@ -125,7 +124,7 @@ Esto simula lo que ocurre cuando alguien entra directamente a la consola de AWS 
 ### Paso 8: Verificar el drift introducido
 
 ```bash
-awslocal s3api get-bucket-tagging --bucket app-bucket-drift-lab
+aws --endpoint-url http://localhost:4566 s3api get-bucket-tagging --bucket app-bucket-drift-lab
 ```
 
 Confirmas que los tags en el recurso real son diferentes a los que Terraform espera. Esto es el drift: brecha entre el estado deseado (codigo) y el estado real (infraestructura).
@@ -225,7 +224,7 @@ bash validate-lab.sh
 | `terraform plan` | Detecta drift comparando el state contra la realidad en el proveedor |
 | Reconciliacion | `terraform apply` revierte los cambios manuales al estado definido en el codigo |
 | `ignore_changes` | Indica a Terraform que ignore diferencias en campos especificos del recurso |
-| `awslocal` | Wrapper del CLI de AWS que apunta a LocalStack en lugar de AWS real |
+| `--endpoint-url` | Flag de AWS CLI para apuntar al servidor mock en lugar de AWS real |
 
 ---
 

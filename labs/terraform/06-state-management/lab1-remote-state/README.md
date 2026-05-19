@@ -4,7 +4,7 @@
 
 ## Objetivo
 
-Configurar un backend S3 remoto usando LocalStack, almacenar el state en S3, e inspeccionar los recursos gestionados con `terraform state list` y `awslocal s3 ls`.
+Configurar un backend S3 remoto usando LocalStack, almacenar el state en S3, e inspeccionar los recursos gestionados con `terraform state list` y `aws --endpoint-url http://localhost:4566 s3 ls`.
 
 ## Duracion
 
@@ -14,25 +14,25 @@ Configurar un backend S3 remoto usando LocalStack, almacenar el state en S3, e i
 
 - Modulo 05 completado
 - Terraform instalado (`terraform version` >= 1.0)
-- LocalStack corriendo en el contenedor (se verifica en el Paso 1)
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq .services.s3
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-Debe retornar `"running"` o `"available"`. LocalStack simula los servicios AWS en `http://localhost:4566`. Si el valor no es `"running"`, espera 10 segundos y vuelve a ejecutar el comando.
+El servidor mock corre en `http://localhost:4566` y simula los servicios de AWS (S3, DynamoDB, etc.) sin necesidad de credenciales reales. Si el comando muestra "No disponible aun", espera 10 segundos y vuelve a ejecutar.
 
 ### Paso 2: Crear el bucket S3 para el remote state
 
 ```bash
-awslocal s3 mb s3://tf-state-lab1
+aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab1
 ```
 
-`awslocal` es un wrapper preconfigurado de la AWS CLI que apunta a LocalStack en `localhost:4566`. El bucket `tf-state-lab1` almacenara el archivo `terraform.tfstate` en lugar de guardarlo localmente en disco.
+El flag `--endpoint-url http://localhost:4566` redirige el comando AWS CLI al servidor mock en lugar de AWS real. El bucket `tf-state-lab1` almacenara el archivo `terraform.tfstate` en lugar de guardarlo localmente en disco.
 
 ### Paso 3: Crear providers.tf con el backend S3
 
@@ -130,14 +130,14 @@ Terraform aplica el plan y crea el bucket `mi-app-bucket-lab1` en LocalStack. Al
 ### Paso 7: Inspeccionar el state remoto en S3
 
 ```bash
-awslocal s3 ls s3://tf-state-lab1/lab1/
+aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab1/lab1/
 ```
 
 ```bash
 terraform state list
 ```
 
-`awslocal s3 ls` confirma que el archivo `terraform.tfstate` existe en el bucket S3. `terraform state list` lo recupera remotamente y lista los recursos gestionados, demostrando que Terraform puede trabajar con el state remoto de forma transparente.
+`aws --endpoint-url http://localhost:4566 s3 ls` confirma que el archivo `terraform.tfstate` existe en el bucket S3. `terraform state list` lo recupera remotamente y lista los recursos gestionados, demostrando que Terraform puede trabajar con el state remoto de forma transparente.
 
 ### Paso 8: Ver los detalles del recurso en el state remoto
 
@@ -173,7 +173,7 @@ bash validate-lab.sh
 | Remote State | State almacenado en S3 en lugar del disco local |
 | `backend "s3"` | Bloque de configuracion del backend en Terraform |
 | `force_path_style` | Necesario para URLs de S3 compatibles con LocalStack |
-| `awslocal` | Wrapper de AWS CLI preconfigurado para LocalStack |
+| `--endpoint-url` | Flag de AWS CLI para apuntar a un servidor alternativo (mock local) |
 | `terraform state list` | Lista recursos del state (local o remoto) |
 | `terraform state show` | Muestra atributos completos de un recurso en el state |
 

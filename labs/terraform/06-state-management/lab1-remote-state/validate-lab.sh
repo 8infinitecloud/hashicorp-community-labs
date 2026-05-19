@@ -20,13 +20,13 @@ validate "Terraform instalado" \
     "terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | grep -q ." \
     "Instala Terraform >= 1.0"
 
-validate "LocalStack S3 esta corriendo" \
-    "curl -s http://localhost:4566/_localstack/health 2>/dev/null | grep -q '\"s3\"'" \
-    "Espera a que LocalStack arranque: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
+validate "Mock AWS server responde en localhost:4566" \
+    "curl -sf http://localhost:4566/ > /dev/null" \
+    "Espera a que el servidor mock arranque: curl -sf http://localhost:4566/ && echo OK"
 
 validate "Bucket tf-state-lab1 existe en LocalStack" \
-    "awslocal s3 ls 2>/dev/null | grep -q 'tf-state-lab1'" \
-    "Crea el bucket: awslocal s3 mb s3://tf-state-lab1"
+    "aws --endpoint-url http://localhost:4566 s3 ls 2>/dev/null | grep -q 'tf-state-lab1'" \
+    "Crea el bucket: aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab1"
 
 validate "providers.tf contiene bloque backend s3" \
     "grep -q 'backend.*\"s3\"' '$PROJECT_DIR/providers.tf' 2>/dev/null" \
@@ -41,7 +41,7 @@ validate "Terraform inicializado (.terraform/ presente)" \
     "Ejecuta: terraform init"
 
 validate "State file existe en S3" \
-    "awslocal s3 ls s3://tf-state-lab1/lab1/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab1/lab1/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
     "Ejecuta: terraform apply -auto-approve"
 
 validate "terraform state list muestra aws_s3_bucket.app" \

@@ -14,22 +14,22 @@ Gestionar multiples entornos (dev y prod) usando Terraform workspaces con un bac
 
 - Labs 1 y 2 del modulo 06 completados
 - Terraform instalado (`terraform version` >= 1.0)
-- LocalStack corriendo en el contenedor
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq .services.s3
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-Debe retornar `"running"` o `"available"`. Este lab usa unicamente S3 para el backend de los workspaces, sin necesidad de DynamoDB.
+Este lab usa unicamente S3 para el backend de los workspaces. El servidor mock lo expone en `localhost:4566` sin necesidad de credenciales reales.
 
 ### Paso 2: Crear el bucket S3 para los workspaces
 
 ```bash
-awslocal s3 mb s3://tf-state-lab3
+aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab3
 ```
 
 Un solo bucket alojara los states de todos los workspaces. Terraform separa automaticamente los states usando el prefijo `env:/<workspace>/` dentro del bucket, por lo que no necesitas crear buckets separados por entorno.
@@ -159,7 +159,7 @@ El workspace activo aparece marcado con `*`. Deben verse al menos `default`, `de
 ### Paso 9: Inspeccionar las rutas de state en S3
 
 ```bash
-awslocal s3 ls s3://tf-state-lab3/ --recursive
+aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab3/ --recursive
 ```
 
 Terraform crea el state del workspace `dev` en `env:/dev/workspaces/terraform.tfstate` y el de `prod` en `env:/prod/workspaces/terraform.tfstate`. Esta estructura de rutas es la forma en que S3 backend implementa el aislamiento de workspaces sin necesitar buckets separados.
@@ -187,7 +187,7 @@ Al cambiar con `terraform workspace select`, Terraform apunta automaticamente al
 ### Paso 11: Confirmar los buckets creados en LocalStack
 
 ```bash
-awslocal s3 ls
+aws --endpoint-url http://localhost:4566 s3 ls
 ```
 
 Deben aparecer `mi-bucket-dev-lab3` y `mi-bucket-prod-lab3` en la lista. Cada workspace creo su propio bucket en LocalStack, demostrando que `terraform.workspace` diferencia los recursos gestionados aunque el codigo fuente sea identico.

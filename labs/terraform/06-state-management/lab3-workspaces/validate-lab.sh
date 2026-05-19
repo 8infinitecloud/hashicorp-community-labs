@@ -20,13 +20,13 @@ validate "Terraform instalado" \
     "terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | grep -q ." \
     "Instala Terraform >= 1.0"
 
-validate "LocalStack S3 esta corriendo" \
-    "curl -s http://localhost:4566/_localstack/health 2>/dev/null | grep -q '\"s3\"'" \
-    "Espera a que LocalStack arranque: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
+validate "Mock AWS server responde en localhost:4566" \
+    "curl -sf http://localhost:4566/ > /dev/null" \
+    "Espera a que el servidor mock arranque: curl -sf http://localhost:4566/ && echo OK"
 
 validate "Bucket tf-state-lab3 existe (backend)" \
-    "awslocal s3 ls 2>/dev/null | grep -q 'tf-state-lab3'" \
-    "Crea el bucket de backend: awslocal s3 mb s3://tf-state-lab3"
+    "aws --endpoint-url http://localhost:4566 s3 ls 2>/dev/null | grep -q 'tf-state-lab3'" \
+    "Crea el bucket de backend: aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab3"
 
 validate "providers.tf contiene backend s3" \
     "grep -q 'backend.*\"s3\"' '$PROJECT_DIR/providers.tf' 2>/dev/null" \
@@ -41,19 +41,19 @@ validate "Terraform inicializado (.terraform/ presente)" \
     "Ejecuta: terraform init"
 
 validate "State del workspace dev existe en S3" \
-    "awslocal s3 ls s3://tf-state-lab3/env:/dev/workspaces/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab3/env:/dev/workspaces/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
     "Ejecuta: terraform workspace new dev && terraform apply -auto-approve"
 
 validate "State del workspace prod existe en S3" \
-    "awslocal s3 ls s3://tf-state-lab3/env:/prod/workspaces/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab3/env:/prod/workspaces/terraform.tfstate 2>/dev/null | grep -q 'terraform.tfstate'" \
     "Ejecuta: terraform workspace new prod && terraform apply -auto-approve"
 
 validate "Bucket mi-bucket-dev-lab3 creado en LocalStack" \
-    "awslocal s3 ls 2>/dev/null | grep -q 'mi-bucket-dev-lab3'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls 2>/dev/null | grep -q 'mi-bucket-dev-lab3'" \
     "Aplica en workspace dev: terraform workspace select dev && terraform apply -auto-approve"
 
 validate "Bucket mi-bucket-prod-lab3 creado en LocalStack" \
-    "awslocal s3 ls 2>/dev/null | grep -q 'mi-bucket-prod-lab3'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls 2>/dev/null | grep -q 'mi-bucket-prod-lab3'" \
     "Aplica en workspace prod: terraform workspace select prod && terraform apply -auto-approve"
 
 echo ""

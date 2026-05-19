@@ -16,13 +16,13 @@ validate() {
 echo -e "${YELLOW}Validando Lab 4: Troubleshooting — Import y Debug${NC}"
 echo "================================================"
 
-validate "LocalStack responde (awslocal s3 ls)" \
-    "awslocal s3 ls" \
-    "Verifica que LocalStack este corriendo: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
+validate "LocalStack responde (aws --endpoint-url http://localhost:4566 s3 ls)" \
+    "aws --endpoint-url http://localhost:4566 s3 ls" \
+    "Verifica que el servidor mock este corriendo: curl -sf http://localhost:4566/ && echo OK"
 
 validate "Bucket bucket-legado existe en LocalStack" \
-    "awslocal s3 ls | grep -q 'bucket-legado'" \
-    "Ejecuta: awslocal s3 mb s3://bucket-legado --region us-east-1"
+    "aws --endpoint-url http://localhost:4566 s3 ls | grep -q 'bucket-legado'" \
+    "Ejecuta: aws --endpoint-url http://localhost:4566 s3 mb s3://bucket-legado --region us-east-1"
 
 validate "Terraform inicializado (.terraform existe)" \
     "test -d $PROJECT_DIR/.terraform" \

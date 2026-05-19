@@ -14,22 +14,22 @@ Configurar DynamoDB como mecanismo de locking del state en un backend S3 con Loc
 
 - Lab 1 del modulo 06 completado
 - Terraform instalado (`terraform version` >= 1.0)
-- LocalStack corriendo en el contenedor
+- Mock AWS server corriendo en el contenedor (se verifica en el Paso 1)
 
 ## Instrucciones Paso a Paso
 
-### Paso 1: Verificar que LocalStack esta listo
+### Paso 1: Verificar que el servidor Mock AWS esta listo
 
 ```bash
-curl -s http://localhost:4566/_localstack/health | jq '{s3: .services.s3, dynamodb: .services.dynamodb}'
+curl -sf http://localhost:4566/ > /dev/null && echo "Mock AWS server OK" || echo "No disponible aun"
 ```
 
-Ambos servicios deben mostrar `"running"` o `"available"`. DynamoDB es el servicio que almacena los locks de Terraform cuando se usa un backend S3. Si algun servicio no esta listo, espera unos segundos y reintenta.
+El servidor mock expone S3 y DynamoDB en el mismo puerto `localhost:4566`. DynamoDB es el servicio que almacena los locks de Terraform cuando se usa un backend S3. Si muestra "No disponible aun", espera unos segundos y reintenta.
 
 ### Paso 2: Crear el bucket S3 para el state
 
 ```bash
-awslocal s3 mb s3://tf-state-lab2
+aws --endpoint-url http://localhost:4566 s3 mb s3://tf-state-lab2
 ```
 
 Este bucket almacenara el `terraform.tfstate`. Se usa un bucket diferente al lab anterior (`tf-state-lab2`) para mantener cada lab aislado y evitar conflictos de state.
@@ -37,7 +37,7 @@ Este bucket almacenara el `terraform.tfstate`. Se usa un bucket diferente al lab
 ### Paso 3: Crear la tabla DynamoDB para el locking
 
 ```bash
-awslocal dynamodb create-table \
+aws --endpoint-url http://localhost:4566 dynamodb create-table \
   --table-name tf-lock \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
   --key-schema AttributeName=LockID,KeyType=HASH \
@@ -156,7 +156,7 @@ terraform apply -auto-approve
 ### Paso 7: Confirmar que la tabla de locks existe y no tiene locks activos
 
 ```bash
-awslocal dynamodb scan --table-name tf-lock
+aws --endpoint-url http://localhost:4566 dynamodb scan --table-name tf-lock
 ```
 
 La respuesta debe mostrar `"Count": 0` porque el apply ya termino y libero el lock. Si ves un item con `LockID`, significa que hay un apply en curso o que un proceso anterior termino de forma anormal (lock huerfano).
@@ -176,11 +176,11 @@ terraform state show aws_s3_bucket.app
 ### Paso 9: Inspeccionar el state file en S3
 
 ```bash
-awslocal s3 ls s3://tf-state-lab2/lab2/
+aws --endpoint-url http://localhost:4566 s3 ls s3://tf-state-lab2/lab2/
 ```
 
 ```bash
-awslocal s3 cp s3://tf-state-lab2/lab2/terraform.tfstate - | python3 -m json.tool | head -20
+aws --endpoint-url http://localhost:4566 s3 cp s3://tf-state-lab2/lab2/terraform.tfstate - | python3 -m json.tool | head -20
 ```
 
 El primer comando confirma que el archivo existe en S3. El segundo lo descarga y formatea el JSON para mostrar los primeros 20 campos: `version`, `terraform_version`, `serial`, y la lista de `resources`. El campo `serial` incrementa en cada apply exitoso.

@@ -16,12 +16,12 @@ validate() {
 echo -e "${YELLOW}Validando Lab 3: Drift Detection${NC}"
 echo "================================================"
 
-validate "LocalStack responde (awslocal s3 ls)" \
-    "awslocal s3 ls" \
-    "Verifica que LocalStack este corriendo: curl -s http://localhost:4566/_localstack/health | jq .services.s3"
+validate "LocalStack responde (aws --endpoint-url http://localhost:4566 s3 ls)" \
+    "aws --endpoint-url http://localhost:4566 s3 ls" \
+    "Verifica que el servidor mock este corriendo: curl -sf http://localhost:4566/ && echo OK"
 
 validate "Bucket app-bucket-drift-lab existe en LocalStack" \
-    "awslocal s3 ls | grep -q 'app-bucket-drift-lab'" \
+    "aws --endpoint-url http://localhost:4566 s3 ls | grep -q 'app-bucket-drift-lab'" \
     "Ejecuta: terraform apply -auto-approve"
 
 validate "Terraform inicializado (.terraform existe)" \
