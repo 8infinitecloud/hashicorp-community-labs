@@ -144,10 +144,10 @@ terraform init -migrate-state -force-copy
 ### Paso 8: Verificar que el state local ya no existe
 
 ```bash
-ls terraform.tfstate 2>/dev/null && echo "AUN EXISTE - migracion no completa" || echo "OK - state local eliminado"
+[ ! -s terraform.tfstate ] && echo "OK - state local vacio (migrado a S3)" || echo "AUN TIENE CONTENIDO - migracion no completa"
 ```
 
-Tras una migracion exitosa, `terraform.tfstate` desaparece del directorio local porque el state ahora vive en S3. Si el archivo aun existe, la migracion no se completo correctamente.
+Tras una migracion exitosa con `terraform init -migrate-state`, Terraform deja el archivo `terraform.tfstate` en blanco (0 bytes) y crea `terraform.tfstate.backup` con el contenido original. El state real ahora vive en S3. Si el archivo local aun tiene contenido (`-s` verifica tamano > 0), la migracion no se completo correctamente.
 
 ### Paso 9: Verificar que el state existe en S3
 

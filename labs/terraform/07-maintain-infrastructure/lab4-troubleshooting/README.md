@@ -1,7 +1,7 @@
 # Lab 4: Troubleshooting
 
 ![Terraform](https://img.shields.io/badge/Terraform-Troubleshooting-7B42BC?style=flat&logo=terraform)
-![LocalStack](https://img.shields.io/badge/LocalStack-AWS_Local-FF9900?style=flat)
+![MockAWS](https://img.shields.io/badge/Mock_AWS-moto_server-FF9900?style=flat)
 
 ## Objetivo
 
@@ -105,7 +105,7 @@ terraform init
 terraform plan
 ```
 
-Terraform ve el bloque `aws_s3_bucket.legado` en el codigo pero no encuentra ningun registro en el state. Por eso el plan indica que quiere crear el bucket. Si ejecutaras `apply` aqui fallaria porque el bucket ya existe en LocalStack.
+Terraform ve el bloque `aws_s3_bucket.legado` en el codigo pero no encuentra ningun registro en el state. Por eso el plan indica que quiere crear el bucket. Si ejecutaras `apply` aqui fallaria porque el bucket ya existe en el servidor mock.
 
 ### Paso 8: Importar el recurso existente al state
 
@@ -113,7 +113,7 @@ Terraform ve el bloque `aws_s3_bucket.legado` en el codigo pero no encuentra nin
 terraform import aws_s3_bucket.legado bucket-legado
 ```
 
-`terraform import` asocia el recurso real (`bucket-legado` en LocalStack) con el bloque de configuracion (`aws_s3_bucket.legado`) en el state. No modifica ni recrea el recurso — solo actualiza el archivo `terraform.tfstate`.
+`terraform import` asocia el recurso real (`bucket-legado` en el servidor mock) con el bloque de configuracion (`aws_s3_bucket.legado`) en el state. No modifica ni recrea el recurso — solo actualiza el archivo `terraform.tfstate`.
 
 ### Paso 9: Inspeccionar lo que se importo
 
@@ -121,7 +121,7 @@ terraform import aws_s3_bucket.legado bucket-legado
 terraform state show aws_s3_bucket.legado
 ```
 
-El comando muestra todos los atributos del recurso tal como estan en LocalStack, ahora registrados en el state de Terraform. Esto te ayuda a verificar que el import fue exitoso y a identificar si el codigo necesita ajustes.
+El comando muestra todos los atributos del recurso tal como estan en el servidor mock, ahora registrados en el state de Terraform. Esto te ayuda a verificar que el import fue exitoso y a identificar si el codigo necesita ajustes.
 
 ### Paso 10: Plan despues del import (debe mostrar cambios minimos o ninguno)
 
@@ -157,7 +157,7 @@ export TF_LOG_PATH=/root/lab/terraform-debug.log
 terraform plan
 ```
 
-Terraform escribe los logs en `/root/lab/terraform-debug.log` mientras ejecuta el plan. El log incluye informacion sobre la inicializacion del provider, llamadas HTTP a LocalStack, y la resolucion de dependencias.
+Terraform escribe los logs en `/root/lab/terraform-debug.log` mientras ejecuta el plan. El log incluye informacion sobre la inicializacion del provider, llamadas HTTP al servidor mock, y la resolucion de dependencias.
 
 ### Paso 14: Inspeccionar el log generado
 

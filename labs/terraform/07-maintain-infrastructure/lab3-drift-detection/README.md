@@ -1,7 +1,7 @@
 # Lab 3: Drift Detection
 
 ![Terraform](https://img.shields.io/badge/Terraform-Drift_Detection-7B42BC?style=flat&logo=terraform)
-![LocalStack](https://img.shields.io/badge/LocalStack-AWS_Local-FF9900?style=flat)
+![MockAWS](https://img.shields.io/badge/Mock_AWS-moto_server-FF9900?style=flat)
 
 ## Objetivo
 
@@ -69,25 +69,16 @@ provider "aws" {
 resource "aws_s3_bucket" "app" {
   bucket        = "app-bucket-drift-lab"
   force_destroy = true
-}
 
-resource "aws_s3_bucket_tagging" "app" {
-  bucket = aws_s3_bucket.app.id
-  tagging {
-    tag_set {
-      key   = "Environment"
-      value = "dev"
-    }
-    tag_set {
-      key   = "ManagedBy"
-      value = "terraform"
-    }
+  tags = {
+    Environment = "dev"
+    ManagedBy   = "terraform"
   }
 }
 EOF
 ```
 
-El provider apunta a LocalStack usando credenciales ficticias y desactivando las validaciones de AWS. El bucket `app-bucket-drift-lab` tiene dos tags que Terraform gestionara: `Environment=dev` y `ManagedBy=terraform`.
+El provider apunta a LocalStack usando credenciales ficticias y desactivando las validaciones de AWS. El bucket `app-bucket-drift-lab` tiene dos tags que Terraform gestionara: `Environment=dev` y `ManagedBy=terraform`. En el provider AWS v5 los tags se definen directamente en el recurso `aws_s3_bucket`.
 
 ### Paso 4: Inicializar Terraform
 
@@ -175,22 +166,13 @@ resource "aws_s3_bucket" "app" {
   bucket        = "app-bucket-drift-lab"
   force_destroy = true
 
+  tags = {
+    Environment = "dev"
+    ManagedBy   = "terraform"
+  }
+
   lifecycle {
     ignore_changes = [tags]
-  }
-}
-
-resource "aws_s3_bucket_tagging" "app" {
-  bucket = aws_s3_bucket.app.id
-  tagging {
-    tag_set {
-      key   = "Environment"
-      value = "dev"
-    }
-    tag_set {
-      key   = "ManagedBy"
-      value = "terraform"
-    }
   }
 }
 EOF

@@ -36,8 +36,8 @@ validate "Terraform inicializado con backend S3 (.terraform/ presente)" \
     "test -d '$PROJECT_DIR/.terraform'" \
     "Ejecuta: terraform init -migrate-state -force-copy"
 
-validate "No hay terraform.tfstate local (migrado a S3)" \
-    "[ ! -f '$PROJECT_DIR/terraform.tfstate' ]" \
+validate "No hay terraform.tfstate local con estado (migrado a S3)" \
+    "[ ! -s '$PROJECT_DIR/terraform.tfstate' ]" \
     "La migracion no se completo -- ejecuta: terraform init -migrate-state -force-copy"
 
 validate "State file existe en S3" \
