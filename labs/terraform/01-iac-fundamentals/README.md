@@ -7,7 +7,7 @@
 Este módulo te introduce a los conceptos fundamentales de Infrastructure as Code (IaC) y Terraform. Aprenderás qué es IaC, por qué es importante, y cómo usar Terraform para gestionar infraestructura de manera declarativa.
 
 ## ⏱️ Duración Total
-Aproximadamente 1 hora (3 labs de 15-30 minutos cada uno)
+Aproximadamente 1.5 horas (4 labs de 15-30 minutos cada uno)
 
 ## 🎯 Objetivos de Aprendizaje
 
@@ -19,6 +19,7 @@ Al completar este módulo serás capaz de:
 - ✅ Usar variables, locals y outputs
 - ✅ Ejecutar el workflow básico de Terraform (init, plan, apply, destroy)
 - ✅ Entender el concepto de estado en Terraform
+- ✅ Comprobar la idempotencia y detectar y corregir drift
 - ✅ Aplicar principios de IaC en proyectos reales
 
 ## 📋 Prerrequisitos
@@ -77,6 +78,22 @@ Al completar este módulo serás capaz de:
 
 ---
 
+### [Lab 4: Idempotencia, Drift y State](./lab4-idempotencia-drift/)
+**Duración:** 25 minutos  
+**Objetivo:** Comprobar en la práctica la idempotencia, el drift y el rol del state
+
+**Aprenderás:**
+- Por qué aplicar dos veces no cambia nada (idempotencia)
+- Detectar cambios manuales con `terraform plan` (drift)
+- Corregir el drift y recuperar recursos borrados con `terraform apply`
+- Inspeccionar el state con `terraform state list` y `terraform state show`
+- Leer el plan: `+` crear, `-/+` reemplazar
+- Usar `terraform plan -detailed-exitcode` en CI
+
+**Badge:** 🏆 Terraform Drift Detective
+
+---
+
 ## 🎓 Conceptos Clave
 
 ### ¿Qué es Infrastructure as Code?
@@ -129,13 +146,14 @@ Terraform mantiene un archivo de estado (`terraform.tfstate`) que:
 
 ## 📊 Progreso del Módulo
 
-Completa los 3 labs en orden:
+Completa los 4 labs en orden:
 
 1. ⬜ Lab 1: Instalación de Terraform
 2. ⬜ Lab 2: Tu Primer Archivo Terraform
 3. ⬜ Lab 3: Simular Infraestructura Local
+4. ⬜ Lab 4: Idempotencia, Drift y State
 
-Al completar los 3 labs obtienes: **🎖️ IaC Fundamentals Complete**
+Al completar los 4 labs obtienes: **🎖️ IaC Fundamentals Complete**
 
 ## 🔧 Comandos Terraform Esenciales
 
@@ -226,8 +244,9 @@ Al completar cada lab obtienes un badge:
 - 🏆 **Terraform Installation** (Lab 1)
 - 🏆 **Terraform First Configuration** (Lab 2)
 - 🏆 **Terraform IaC Fundamentals** (Lab 3)
+- 🏆 **Terraform Drift Detective** (Lab 4)
 
-Al completar los 3 labs:
+Al completar los 4 labs:
 - 🎖️ **IaC Fundamentals Complete**
 
 ---

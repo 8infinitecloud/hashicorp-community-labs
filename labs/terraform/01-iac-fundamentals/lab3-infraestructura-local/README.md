@@ -245,4 +245,4 @@ Ejecuta todas las verificaciones automáticas para confirmar que el lab fue comp
 ---
 
 **Anterior:** [Lab 2 - Primer Archivo](../lab2-primer-archivo/)
-**Siguiente:** [Modulo 2 - Terraform Fundamentals](../../02-terraform-fundamentals/)
+**Siguiente:** [Lab 4 - Idempotencia, Drift y State](../lab4-idempotencia-drift/)
