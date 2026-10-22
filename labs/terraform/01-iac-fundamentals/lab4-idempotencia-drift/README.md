@@ -197,7 +197,7 @@ Debe devolver `0`: el código, el state y la realidad coinciden.
 ls terraform.tfstate*
 ```
 
-Verás `terraform.tfstate` y `terraform.tfstate.backup`. Con el backend local, Terraform guarda la versión anterior del state en el archivo `.backup` en cada cambio.
+Verás `terraform.tfstate` y, normalmente, `terraform.tfstate.backup`. Con el backend local, el state vive en el directorio de trabajo y Terraform guarda una copia de una versión anterior en el archivo `.backup`.
 
 ### Paso 11: Volver al directorio del lab y validar
 
@@ -223,7 +223,7 @@ Ejecuta las verificaciones automáticas del lab.
 | `terraform state list` | Lista las direcciones de los recursos del state |
 | `terraform state show` | Muestra los atributos de un recurso del state |
 | `-/+` en el plan | El recurso se destruye y se vuelve a crear (`forces replacement`) |
-| `terraform.tfstate.backup` | Copia de la versión anterior del state en el backend local |
+| `terraform.tfstate.backup` | Copia de una versión anterior del state en el backend local |
 
 ---
 
