@@ -25,7 +25,7 @@ Los badges aparecen aquí automáticamente al completar cada laboratorio:
 ## 📚 Módulos y Laboratorios
 
 ### Módulo 1: IaC Fundamentals
-**Duración:** 1 hora | **Labs:** 3
+**Duración:** 1.5 horas | **Labs:** 4
 
 - **[Lab 1: Instalación de Terraform](./labs/terraform/01-iac-fundamentals/lab1-instalacion/)**
   - Instalar Terraform y verificar instalación
@@ -38,6 +38,10 @@ Los badges aparecen aquí automáticamente al completar cada laboratorio:
 - **[Lab 3: Infraestructura Local](./labs/terraform/01-iac-fundamentals/lab3-infraestructura-local/)**
   - Simular infraestructura con archivos locales
   - Duración: 30 minutos
+
+- **[Lab 4: Idempotencia, Drift y State](./labs/terraform/01-iac-fundamentals/lab4-idempotencia-drift/)**
+  - Comprobar la idempotencia, detectar y corregir drift, inspeccionar el state
+  - Duración: 25 minutos
 
 ### Módulo 2: Terraform Fundamentals
 **Duración:** 2 horas | **Labs:** 4
@@ -126,7 +130,8 @@ hashicorp-terraform-labs/
     │   ├── README.md
     │   ├── lab1-instalacion/
     │   ├── lab2-primer-archivo/
-    │   └── lab3-infraestructura-local/
+    │   ├── lab3-infraestructura-local/
+    │   └── lab4-idempotencia-drift/
     ├── 02-terraform-fundamentals/
     ├── 03-core-workflow/
     ├── 04-terraform-configuration/
